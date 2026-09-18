@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>MELVRA Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;1,500&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/admin.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect fill='%23efe8dc' width='64' height='64'/><text x='32' y='42' text-anchor='middle' font-size='18' font-family='serif' fill='%23241e18'>M</text></svg>" />
+</head>
+<body>
+  <section class="gate" id="gate">
+    <form class="gate-card" onsubmit="login(event)">
+      <div class="brand">MELVRA</div>
+      <h1>Studio door.</h1>
+      <p>Private atelier control. Customers never see this room — only the person with the keys.</p>
+      <label>Identity</label>
+      <input id="user" autocomplete="username" placeholder="studio" required />
+      <label>Key</label>
+      <input id="pass" type="password" autocomplete="current-password" required />
+      <div class="err" id="err"></div>
+      <button class="btn btn-primary" type="submit">Enter</button>
+    </form>
+  </section>
+
+  <div class="shell" id="shell">
+    <aside class="side">
+      <div class="brand">MELVRA</div>
+      <small>Atelier control</small>
+      <nav>
+        <button data-page="dash" class="on" onclick="go('dash')">Overview</button>
+        <button data-page="products" onclick="go('products')">Products</button>
+        <button data-page="coupons" onclick="go('coupons')">Coupons</button>
+        <button data-page="notes" onclick="go('notes')">Announcements</button>
+        <button data-page="orders" onclick="go('orders')">Orders</button>
+        <button data-page="settings" onclick="go('settings')">Settings</button>
+        <a href="index.html" style="padding:10px 12px;display:block;color:var(--muted);font-size:14px">View shop ↗</a>
+      </nav>
+      <button class="btn btn-ghost out" onclick="logout()">Lock studio</button>
+    </aside>
+
+    <main class="main">
+      <button class="btn btn-ghost studio-back" onclick="studioBack()" aria-label="Back">← Back</button>
+      <section class="page on" id="page-dash">
+        <div class="top">
+          <div>
+            <h2>Overview</h2>
+            <p id="dash-coupons">Codes and stock in one glance.</p>
+          </div>
+        </div>
+        <div class="stats" id="dash-stats"></div>
+        <div class="panel">
+          <table>
+            <thead><tr><th>Order</th><th>Name</th><th>Total</th><th>Status</th></tr></thead>
+            <tbody id="dash-orders"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="page" id="page-products">
+        <div class="top">
+          <div>
+            <h2>Products</h2>
+            <p id="prod-count">What the shop will show.</p>
+          </div>
+          <button class="btn btn-primary" style="width:auto" onclick="newProduct()">New piece</button>
+        </div>
+        <div class="panel" style="margin-bottom:18px">
+          <table>
+            <thead><tr><th></th><th>Piece</th><th>Type</th><th>Price</th><th>Stock</th><th>Shelf</th><th></th></tr></thead>
+            <tbody id="prod-table"></tbody>
+          </table>
+        </div>
+        <div class="panel editor" id="prod-editor" style="display:none">
+          <form onsubmit="saveProduct(event)">
+            <div class="top" style="margin-bottom:12px">
+              <h2 id="e-title" style="font-size:28px">Edit piece</h2>
+              <button class="btn btn-ghost btn-sm" type="button" onclick="cancelEditor()">Close</button>
+            </div>
+            <div class="form-grid">
+              <div class="full"><label>Name</label><input id="e-name" required></div>
+              <div><label>Category</label>
+                <select id="e-cat">
+                  <option>Bracelet</option>
+                  <option>Keychain</option>
+                  <option>Set</option>
+                </select>
+              </div>
+              <div><label>Tag</label><input id="e-tag" placeholder="Bestseller"></div>
+              <div><label>Price ₹</label><input id="e-price" type="number" min="0"></div>
+              <div><label>Compare ₹</label><input id="e-compare" type="number" min="0"></div>
+              <div><label>Stock</label><input id="e-stock" type="number" min="0"></div>
+              <div><label>On the shop</label>
+                <select id="e-live-select" onchange="$('#e-live').checked=this.value==='1'">
+                  <option value="1">Live</option>
+                  <option value="0">Hidden</option>
+                </select>
+                <input id="e-live" type="checkbox" checked style="display:none">
+              </div>
+              <div class="full"><label>Photos</label>
+                <div id="e-gallery" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px"></div>
+                <input type="file" accept="image/*" multiple onchange="onGalleryFiles(this)" style="height:auto">
+                <p class="hint">Upload one or more photos. The first photo is the main cover image; you can reorder or remove any photo below. Existing file paths like images/qmOsP.jpg also work if you type them in the box that appears after uploading.</p>
+              </div>
+              <div class="full"><label>Description</label><textarea id="e-desc"></textarea></div>
+            </div>
+            <button class="btn btn-primary" type="submit" style="width:auto;margin-top:16px">Save piece</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="page" id="page-coupons">
+        <div class="top">
+          <div>
+            <h2>Coupons</h2>
+            <p>Codes the bag page will accept.</p>
+          </div>
+          <button class="btn btn-primary" style="width:auto" onclick="newCoupon()">New code</button>
+        </div>
+        <div class="panel" style="margin-bottom:18px">
+          <table>
+            <thead><tr><th>Code</th><th>Offer</th><th>Min. order</th><th>Used</th><th>State</th><th></th></tr></thead>
+            <tbody id="coup-table"></tbody>
+          </table>
+        </div>
+        <div class="panel editor" id="coup-editor" style="display:none">
+          <form onsubmit="saveCoupon(event)">
+            <div class="top" style="margin-bottom:12px">
+              <h2 id="c-title" style="font-size:28px">New coupon</h2>
+              <button class="btn btn-ghost btn-sm" type="button" onclick="cancelCoupon()">Close</button>
+            </div>
+            <div class="form-grid">
+              <div><label>Code</label><input id="c-code" placeholder="WELCOME10" required></div>
+              <div><label>Type</label>
+                <select id="c-type">
+                  <option value="percent">Percent off</option>
+                  <option value="flat">Flat ₹ off</option>
+                </select>
+              </div>
+              <div><label>Value</label><input id="c-value" type="number" min="0"></div>
+              <div><label>Minimum order ₹</label><input id="c-min" type="number" min="0"></div>
+              <div><label>Max uses</label><input id="c-max" type="number" min="0"></div>
+              <div><label>Note</label><input id="c-note" placeholder="Diwali drop"></div>
+              <div class="full"><label><input id="c-active" type="checkbox" checked style="width:auto;height:auto;margin-right:8px"> Active on the shop</label></div>
+            </div>
+            <button class="btn btn-primary" type="submit" style="width:auto;margin-top:16px">Save coupon</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="page" id="page-notes">
+        <div class="top">
+          <div>
+            <h2>Announcements</h2>
+            <p>One live note sits on the shop, above the menu.</p>
+          </div>
+          <button class="btn btn-primary" style="width:auto" onclick="newNote()">New note</button>
+        </div>
+        <div class="panel" style="margin-bottom:18px">
+          <table>
+            <thead><tr><th>Note</th><th>State</th><th></th></tr></thead>
+            <tbody id="note-table"></tbody>
+          </table>
+        </div>
+        <div class="panel editor" id="note-editor" style="display:none">
+          <form onsubmit="saveNote(event)">
+            <label>Announcement</label>
+            <input id="n-text" required placeholder="Free shipping this week on every stack.">
+            <label style="margin-top:12px"><input id="n-active" type="checkbox" checked style="width:auto;height:auto;margin-right:8px"> Show on the shop</label>
+            <button class="btn btn-primary" type="submit" style="width:auto;margin-top:16px">Save note</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="page" id="page-orders">
+        <div class="top">
+          <div>
+            <h2>Orders</h2>
+            <p>Every checkout from the shop lands here.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <table>
+            <thead><tr><th>Order</th><th>Customer</th><th>Pieces</th><th>Coupon</th><th>Total</th><th>Status</th><th></th></tr></thead>
+            <tbody id="ord-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="page" id="page-settings">
+        <div class="top">
+          <div>
+            <h2>Settings</h2>
+            <p>House rules for shipping and the studio key.</p>
+          </div>
+        </div>
+        <form class="panel editor" onsubmit="saveSettings(event)" style="margin-bottom:16px">
+          <div class="form-grid">
+            <div><label>Brand</label><input id="s-brand"></div>
+            <div><label>Tagline</label><input id="s-tag"></div>
+            <div><label>Free shipping above ₹</label><input id="s-free" type="number"></div>
+            <div><label>Shipping fee ₹</label><input id="s-ship" type="number"></div>
+            <div class="full"><label>Public email</label><input id="s-email"></div>
+          </div>
+          <h2 style="font-size:22px;margin:22px 0 10px">Homepage spotlight</h2>
+          <p class="hint" style="margin-bottom:12px">The featured piece shown on the hero image at the top of the shop. Its photo, name and price come straight from the product you pick below — edit the product itself to change those. Clicking it on the shop takes visitors to that product's page.</p>
+          <div class="form-grid">
+            <div><label>Spotlight product</label><select id="s-spotlight"></select></div>
+            <div><label>Spotlight caption</label><input id="s-spotlight-label" placeholder="Ivory · sand · clay"></div>
+          </div>
+          <button class="btn btn-primary" type="submit" style="width:auto;margin-top:16px">Save settings</button>
+        </form>
+        <form class="panel editor" onsubmit="savePass(event)" style="margin-bottom:16px">
+          <h2 style="font-size:28px;margin-bottom:10px">Change studio key</h2>
+          <div class="form-grid">
+            <div><label>New password</label><input id="s-pass" type="password"></div>
+            <div><label>Confirm</label><input id="s-pass2" type="password"></div>
+          </div>
+          <button class="btn btn-primary" type="submit" style="width:auto;margin-top:16px">Update key</button>
+        </form>
+        <div class="panel editor">
+          <p class="hint" style="margin-bottom:12px">Reset restores the original eight pieces and the three starter coupons. Orders will be cleared.</p>
+          <button class="btn btn-danger" type="button" onclick="resetAll()">Reset atelier data</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <!-- Firebase (shared, real-time data — see js/firebase-config.js) -->
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

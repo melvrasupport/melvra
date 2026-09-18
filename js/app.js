@@ -1,0 +1,699 @@
+const REVIEWS = [
+  { name: "Aanya M.", city: "Jaipur", stars: 5, text: "Wore the Dune Knot for three weeks without taking it off. Softened, never frayed. This is the opposite of costume jewellery.", product: "Dune Knot" },
+  { name: "Rohit S.", city: "Delhi", stars: 5, text: "Gifted Tide Charm to my sister. The brass already looks lived-in. Packaging was as considered as the piece.", product: "Tide Charm" },
+  { name: "Meher K.", city: "Mumbai", stars: 4, text: "Ivory Thread is barely there, which I wanted. Sits well with a watch. Wish there was a longer option for stacking higher.", product: "Ivory Thread" },
+  { name: "Kabir D.", city: "Bengaluru", stars: 5, text: "Night Slide feels expensive in the hand. The brass slider is the whole design. Wearing it to work every day.", product: "Night Slide" },
+  { name: "Sana R.", city: "Udaipur", stars: 5, text: "Trio Stack arrived tied in linen. Colours are quieter than the photos — better, actually. Will order Clay Twin next.", product: "Trio Stack" },
+  { name: "Ishaan P.", city: "Pune", stars: 4, text: "Olive Braid has real weight. Not a festival bracelet. More like something you keep for years.", product: "Olive Braid" }
+];
+
+const state = {
+  view: "home",
+  filter: "All",
+  productId: null,
+  galleryIndex: 0,
+  qty: 1,
+  cart: JSON.parse(localStorage.getItem("melvra-cart") || "[]"),
+  wishes: JSON.parse(localStorage.getItem("melvra-wish") || "[]"),
+  checkout: false,
+  ordered: false,
+  orderNo: null,
+  couponCode: "",
+  coupon: null
+};
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
+const save = () => {
+  localStorage.setItem("melvra-cart", JSON.stringify(state.cart));
+  localStorage.setItem("melvra-wish", JSON.stringify(state.wishes));
+};
+const catalog = () => MELVRA.catalog();
+const PRODUCTS = () => MELVRA.liveProducts();
+const count = () => state.cart.reduce((a, i) => a + i.qty, 0);
+const findP = (id) => catalog().find((p) => p.id === id);
+const settings = () => MELVRA.settings();
+
+function setView(view, id) {
+  state.view = view;
+  state.productId = id || null;
+  state.galleryIndex = 0;
+  state.qty = 1;
+  state.checkout = false;
+  state.ordered = view === "ordered" ? true : false;
+  $$(".view").forEach((v) => v.classList.remove("active"));
+  if (view === "product") {
+    $("#view-product").classList.add("active");
+    renderProduct();
+  } else if (view === "cart" || view === "ordered") {
+    $("#view-cart").classList.add("active");
+    renderCart();
+  } else if (view === "login" || view === "auth") {
+    $("#view-auth").classList.add("active");
+    renderAuth();
+  } else if (view === "account") {
+    $("#view-account").classList.add("active");
+    renderAccount();
+  } else {
+    $("#view-home").classList.add("active");
+    renderGrid();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  $$(".nav-links a").forEach((a) => a.classList.toggle("active", a.dataset.view === (view === "product" ? "products" : view)));
+  if (view === "product" || view === "cart" || view === "login" || view === "account") window.scrollTo({ top: 0, behavior: "smooth" });
+  closeDrawer();
+  closeMobile();
+}
+
+function addToCart(id, qty = 1, silent = false) {
+  const p = findP(id);
+  if (!p || p.visible === false) return toastMsg("This piece is no longer listed.");
+  const have = state.cart.find((i) => i.id === id)?.qty || 0;
+  if (have + qty > (p.stock || 0)) return toastMsg("Only " + (p.stock || 0) + " left in the atelier.");
+  const item = state.cart.find((i) => i.id === id);
+  if (item) item.qty += qty;
+  else state.cart.push({ id, qty });
+  save();
+  updateBadge();
+  if (!silent) toast(id);
+  renderDrawer();
+}
+
+function setQty(id, qty) {
+  const item = state.cart.find((i) => i.id === id);
+  if (!item) return;
+  const p = findP(id);
+  item.qty = Math.min(Math.max(1, qty), p?.stock || 1);
+  save();
+  updateBadge();
+  renderCart();
+  renderDrawer();
+}
+
+function removeItem(id) {
+  state.cart = state.cart.filter((i) => i.id !== id);
+  save();
+  updateBadge();
+  renderCart();
+  renderDrawer();
+}
+
+function toggleWish(id, ev) {
+  if (ev) ev.stopPropagation();
+  if (state.wishes.includes(id)) state.wishes = state.wishes.filter((x) => x !== id);
+  else state.wishes.push(id);
+  save();
+  renderGrid();
+}
+
+function updateBadge() {
+  const n = count();
+  $$(".cart-count").forEach((el) => {
+    el.textContent = n;
+    el.classList.toggle("show", n > 0);
+    el.classList.remove("pop");
+    void el.offsetWidth;
+    if (n > 0) el.classList.add("pop");
+  });
+}
+
+function toast(id) {
+  const p = findP(id);
+  const t = $("#toast");
+  t.innerHTML = `<img src="${p.image}" alt=""><div><b>Added to bag</b><small>${p.name} · ${inr(p.price)}</small></div>`;
+  t.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove("show"), 2600);
+}
+function toastMsg(msg) {
+  const t = $("#toast");
+  t.innerHTML = `<div><b>${msg}</b><small>MELVRA atelier</small></div>`;
+  t.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove("show"), 2600);
+}
+
+function productCard(p) {
+  const on = state.wishes.includes(p.id);
+  const out = (p.stock || 0) < 1;
+  return `
+    <article class="card reveal" onclick="setView('product','${p.id}')">
+      <div class="card-media">
+        <img src="${p.image}" alt="${p.name}">
+        <span class="card-tag">${out ? "Sold out" : p.tag || p.category}</span>
+        <button class="wish ${on ? "on" : ""}" onclick="toggleWish('${p.id}', event)" aria-label="Save">${on ? "♥" : "♡"}</button>
+      </div>
+      <div class="card-body">
+        <div class="card-cat">${p.category}</div>
+        <h3>${p.name}</h3>
+        <div class="card-row">
+          <div>
+            <div class="price">${inr(p.price)}</div>
+            <div class="stars">★★★★★ <span>${p.rating || "—"} · ${p.reviewCount || 0}</span></div>
+          </div>
+          <button class="add-mini" onclick="event.stopPropagation(); addToCart('${p.id}')" ${out ? "disabled" : ""}>${out ? "Out" : "Add"}</button>
+        </div>
+      </div>
+    </article>`;
+}
+
+function renderGrid() {
+  const list = PRODUCTS().filter((p) => state.filter === "All" || p.category === state.filter);
+  const grid = $("#product-grid");
+  if (!grid) return;
+  grid.innerHTML = list.length ? list.map(productCard).join("") : `<p style="color:var(--muted)">Nothing in this shelf right now.</p>`;
+  const meta = document.querySelector(".hero-meta strong");
+  if (meta) meta.textContent = PRODUCTS().length;
+  observeReveals();
+}
+
+function renderSpotlight() {
+  const el = $("#hero-spotlight");
+  if (!el) return;
+  const s = settings();
+  const products = PRODUCTS();
+  const p = (s.spotlightProductId && findP(s.spotlightProductId)) || products[0];
+  if (!p) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  $("#hero-spotlight-img").src = (p.gallery && p.gallery[0]) || p.image;
+  $("#hero-spotlight-img").alt = p.name;
+  $("#hero-spotlight-name").textContent = p.name;
+  $("#hero-spotlight-label").textContent = s.spotlightLabel || inr(p.price);
+  el.onclick = () => { setView("product", p.id); window.scrollTo({ top: 0, behavior: "smooth" }); return false; };
+}
+
+function renderHomeReviews() {
+  const el = $("#review-grid");
+  if (!el) return;
+  el.innerHTML = REVIEWS.map((r) => `
+    <article class="review reveal">
+      <header>
+        <div class="who">
+          <div class="avatar">${r.name[0]}</div>
+          <div><b>${r.name}</b><small>${r.city} · ${r.product}</small></div>
+        </div>
+        <div class="stars">${"★".repeat(r.stars)}${"☆".repeat(5 - r.stars)}</div>
+      </header>
+      <p>${r.text}</p>
+    </article>`).join("");
+}
+
+function renderProduct() {
+  const p = findP(state.productId);
+  if (!p || p.visible === false) return setView("home");
+  const gallery = (p.gallery && p.gallery.length ? p.gallery : [p.image]);
+  const img = gallery[state.galleryIndex] || p.image;
+  const related = PRODUCTS().filter((x) => x.id !== p.id && (x.category === p.category || x.category === "Set")).slice(0, 3);
+  const reviews = REVIEWS.filter((r) => r.product === p.name);
+  const extra = reviews.length ? reviews : REVIEWS.slice(0, 2);
+  const specs = p.specs || {};
+  const out = (p.stock || 0) < 1;
+  const s = settings();
+
+  $("#view-product").innerHTML = `
+    <div class="pdp">
+      <div class="crumb"><a href="#" onclick="setView('home');return false;">Shop</a> · ${p.category} · ${p.name}</div>
+      <div class="pdp-grid">
+        <div>
+          <div class="gallery-main"><img src="${img}" alt="${p.name}"></div>
+          <div class="thumbs">
+            ${gallery.map((g, i) => `<button class="${i === state.galleryIndex ? "on" : ""}" onclick="state.galleryIndex=${i};renderProduct()"><img src="${g}" alt=""></button>`).join("")}
+          </div>
+        </div>
+        <div class="pdp-info">
+          <div class="eyebrow">${p.tag || p.category} · Handmade</div>
+          <h1>${p.name}</h1>
+          <div class="stars">★★★★★ <span>${p.rating || "—"} · ${p.reviewCount || 0} reviews</span></div>
+          <div class="pdp-price"><span class="now">${inr(p.price)}</span>${p.compare ? `<span class="was">${inr(p.compare)}</span>` : ""}</div>
+          <p class="desc">${p.desc || p.blurb || ""}</p>
+          <dl class="specs">${Object.entries(specs).map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}
+            <div><dt>In atelier</dt><dd>${out ? "Sold out" : p.stock + " remaining"}</dd></div>
+          </dl>
+          <div class="qty-row">
+            <div class="qty">
+              <button onclick="state.qty=Math.max(1,state.qty-1);$('#qtyn').textContent=state.qty">−</button>
+              <span id="qtyn">${state.qty}</span>
+              <button onclick="state.qty=Math.min(${p.stock || 1},state.qty+1);$('#qtyn').textContent=state.qty">+</button>
+            </div>
+            <button class="btn btn-primary" style="flex:1" ${out ? "disabled" : ""} onclick="addToCart('${p.id}', state.qty)">${out ? "Sold out" : "Add to bag"}</button>
+          </div>
+          <button class="btn btn-ghost full" ${out ? "disabled" : ""} onclick="addToCart('${p.id}', state.qty, true); setView('cart')">Buy now</button>
+          <p class="buy-note">Free shipping across India on orders above ${inr(s.freeShip)}. Packed in undyed cotton. Ships in 3–5 days.</p>
+        </div>
+      </div>
+
+      <div class="section" style="padding:72px 0 20px">
+        <div class="section-head"><h2>You may also like</h2></div>
+        <div class="grid">${related.map(productCard).join("")}</div>
+      </div>
+
+      <div class="section" style="padding:40px 0 0">
+        <div class="section-head">
+          <h2>Reviews</h2>
+          <p>${p.rating || "—"} average from ${p.reviewCount || 0} verified notes.</p>
+        </div>
+        <div class="review-grid">
+          ${extra.map((r) => `
+            <article class="review">
+              <header>
+                <div class="who"><div class="avatar">${r.name[0]}</div><div><b>${r.name}</b><small>${r.city}</small></div></div>
+                <div class="stars">${"★".repeat(r.stars)}</div>
+              </header>
+              <p>${r.text}</p>
+            </article>`).join("")}
+        </div>
+      </div>
+    </div>`;
+  observeReveals();
+}
+
+function totals() {
+  const s = settings();
+  const sub = state.cart.reduce((a, i) => {
+    const p = findP(i.id);
+    return a + (p ? p.price * i.qty : 0);
+  }, 0);
+  const afterCoupon = Math.max(0, sub - (state.coupon?.discount || 0));
+  const ship = afterCoupon === 0 || afterCoupon >= s.freeShip ? 0 : s.shipFee;
+  return { sub, discount: state.coupon?.discount || 0, ship, total: afterCoupon + ship };
+}
+
+function tryCoupon() {
+  const code = ($("#coupon-input")?.value || state.couponCode || "").trim();
+  const sub = state.cart.reduce((a, i) => a + (findP(i.id)?.price || 0) * i.qty, 0);
+  const res = MELVRA.applyCoupon(code, sub);
+  if (!res.ok) {
+    state.coupon = null;
+    state.couponCode = "";
+    toastMsg(res.reason);
+  } else {
+    state.coupon = res;
+    state.couponCode = res.coupon.code;
+    toastMsg(res.coupon.code + " applied · −" + inr(res.discount));
+  }
+  renderCart();
+}
+function clearCoupon() {
+  state.coupon = null;
+  state.couponCode = "";
+  renderCart();
+}
+
+function cartRows() {
+  if (!state.cart.length) return `<div class="empty"><div class="eyebrow">Bag</div><h2>Nothing here yet.</h2><p style="color:var(--muted);margin-bottom:22px">Cotton pieces, waiting to be chosen.</p><button class="btn btn-primary" onclick="setView('home');document.getElementById('shop').scrollIntoView({behavior:'smooth'})">Continue browsing</button></div>`;
+  return state.cart.map((i) => {
+    const p = findP(i.id);
+    if (!p) return "";
+    return `
+      <div class="cart-item">
+        <img src="${p.image}" alt="${p.name}" onclick="setView('product','${p.id}')">
+        <div>
+          <h4>${p.name}</h4>
+          <div class="meta">${p.category} · ${inr(p.price)}</div>
+          <div class="qty" style="height:36px">
+            <button onclick="setQty('${p.id}', ${i.qty - 1})">−</button>
+            <span>${i.qty}</span>
+            <button onclick="setQty('${p.id}', ${i.qty + 1})">+</button>
+          </div>
+        </div>
+        <div class="right">
+          <b>${inr(p.price * i.qty)}</b>
+          <button class="remove" onclick="removeItem('${p.id}')">Remove</button>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function couponBox() {
+  return `
+    <div class="coupon-box">
+      <label>Coupon</label>
+      <div class="coupon-row">
+        <input id="coupon-input" value="${state.couponCode}" placeholder="WELCOME10" ${state.coupon ? "disabled" : ""}>
+        ${state.coupon
+          ? `<button class="btn btn-ghost" type="button" onclick="clearCoupon()">Remove</button>`
+          : `<button class="btn btn-ghost" type="button" onclick="tryCoupon()">Apply</button>`}
+      </div>
+    </div>`;
+}
+
+function renderCart() {
+  const t = totals();
+  const s = settings();
+  if (state.ordered) {
+    $("#view-cart").innerHTML = `
+      <div class="success">
+        <div class="mark">✓</div>
+        <div class="eyebrow">Order confirmed</div>
+        <h2>Thank you.</h2>
+        <p style="color:var(--muted);max-width:420px;margin:10px auto 8px">Your pieces are being packed in Jaipur. Order <b>${state.orderNo}</b>.</p>
+        <p style="color:var(--muted);margin-bottom:26px">A note will arrive on email shortly. This is a demonstration checkout — no payment was taken.</p>
+        <button class="btn btn-primary" onclick="state.ordered=false;setView('home')">Back to the atelier</button>
+      </div>`;
+    return;
+  }
+  if (state.checkout && state.cart.length) {
+    $("#view-cart").innerHTML = `
+      <div class="cart-page">
+        <div class="crumb"><a href="#" onclick="state.checkout=false;renderCart();return false;">Bag</a> · Checkout</div>
+        <div class="checkout">
+          <form class="form" onsubmit="placeOrder(event)">
+            <h3>Where should it go?</h3>
+            <div class="two">
+              <div><label>First name</label><input name="first" required placeholder="Aanya"></div>
+              <div><label>Last name</label><input name="last" required placeholder="Mehra"></div>
+            </div>
+            <label>Email</label><input name="email" type="email" required placeholder="you@email.com">
+            <label>Phone</label><input name="phone" required placeholder="+91">
+            <label>Address</label><textarea name="address" required placeholder="House, street, area"></textarea>
+            <div class="two">
+              <div><label>City</label><input name="city" required placeholder="Jaipur"></div>
+              <div><label>PIN</label><input name="pin" required placeholder="302001"></div>
+            </div>
+            <label>Payment</label>
+            <select name="pay">
+              <option>UPI</option>
+              <option>Card</option>
+              <option>Cash on delivery</option>
+            </select>
+            <button class="btn btn-accent full" style="margin-top:20px" type="submit">Place order · ${inr(t.total)}</button>
+          </form>
+          <aside class="summary">
+            <h3>On its way</h3>
+            ${state.cart.map((i) => { const p = findP(i.id); return p ? `<div class="row"><span>${p.name} × ${i.qty}</span><span>${inr(p.price * i.qty)}</span></div>` : ""; }).join("")}
+            ${t.discount ? `<div class="row"><span>Coupon ${state.couponCode}</span><span>−${inr(t.discount)}</span></div>` : ""}
+            <div class="row"><span>Shipping</span><span>${t.ship ? inr(t.ship) : "Free"}</span></div>
+            <div class="row total"><span>Total</span><span>${inr(t.total)}</span></div>
+          </aside>
+        </div>
+      </div>`;
+    return;
+  }
+
+  $("#view-cart").innerHTML = `
+    <div class="cart-page">
+      <div class="section-head" style="margin-bottom:28px">
+        <h2>Your bag</h2>
+        <p>${count()} piece${count() === 1 ? "" : "s"} · handmade, ready to pack.</p>
+      </div>
+      ${!state.cart.length ? cartRows() : `
+      <div class="cart-layout">
+        <div class="cart-list">${cartRows()}</div>
+        <aside class="summary">
+          <h3>Summary</h3>
+          <div class="row"><span>Subtotal</span><span>${inr(t.sub)}</span></div>
+          ${t.discount ? `<div class="row"><span>Coupon ${state.couponCode}</span><span>−${inr(t.discount)}</span></div>` : ""}
+          <div class="row"><span>Shipping</span><span>${t.ship ? inr(t.ship) : "Free"}</span></div>
+          <div class="row total"><span>Total</span><span>${inr(t.total)}</span></div>
+          ${couponBox()}
+          <button class="btn btn-primary full" style="margin-top:18px" onclick="state.checkout=true;renderCart();window.scrollTo({top:0,behavior:'smooth'})">Checkout</button>
+          <button class="btn btn-ghost full" style="margin-top:8px" onclick="setView('home')">Keep looking</button>
+          <p class="buy-note">Free shipping above ${inr(s.freeShip)}. Returns within 7 days if unworn.</p>
+        </aside>
+      </div>`}
+    </div>`;
+}
+
+function placeOrder(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const t = totals();
+  state.orderNo = "MEL-" + Math.floor(24000 + Math.random() * 70000);
+  const items = state.cart.map((i) => {
+    const p = findP(i.id);
+    return { id: i.id, name: p?.name, qty: i.qty, price: p?.price, image: p?.image };
+  });
+  items.forEach((it) => MELVRA.adjustStock(it.id, -it.qty));
+  if (state.couponCode) MELVRA.markCouponUsed(state.couponCode);
+  const who = currentUser();
+  MELVRA.addOrder({
+    id: state.orderNo,
+    at: new Date().toISOString(),
+    name: (fd.get("first") || "") + " " + (fd.get("last") || ""),
+    email: fd.get("email"),
+    user: who?.username || "",
+    phone: fd.get("phone"),
+    address: [fd.get("address"), fd.get("city"), fd.get("pin")].filter(Boolean).join(", "),
+    pay: fd.get("pay"),
+    items,
+    sub: t.sub,
+    discount: t.discount,
+    coupon: state.couponCode || "",
+    ship: t.ship,
+    total: t.total,
+    status: "New"
+  });
+  state.cart = [];
+  state.coupon = null;
+  state.couponCode = "";
+  save();
+  updateBadge();
+  state.ordered = true;
+  state.checkout = false;
+  renderCart();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function renderDrawer() {
+  const t = totals();
+  $("#drawer-body").innerHTML = state.cart.length
+    ? state.cart.map((i) => {
+        const p = findP(i.id);
+        if (!p) return "";
+        return `<div class="cart-item" style="grid-template-columns:72px 1fr;margin-bottom:10px">
+          <img src="${p.image}" alt="" style="width:72px;height:64px">
+          <div>
+            <h4 style="font-size:20px">${p.name}</h4>
+            <div class="meta">${i.qty} × ${inr(p.price)}</div>
+            <button class="remove" onclick="removeItem('${p.id}')">Remove</button>
+          </div>
+        </div>`;
+      }).join("")
+    : `<p style="color:var(--muted);padding:24px 8px">Your bag is empty.</p>`;
+  $("#drawer-total").textContent = inr(t.total);
+}
+
+function openDrawer() {
+  renderDrawer();
+  $("#overlay").classList.add("show");
+  $("#drawer").classList.add("show");
+}
+function closeDrawer() {
+  $("#overlay").classList.remove("show");
+  $("#drawer").classList.remove("show");
+}
+function closeMobile() { $("#mobile").style.display = "none"; }
+function toggleMobile() {
+  const m = $("#mobile");
+  m.style.display = m.style.display === "block" ? "none" : "block";
+}
+
+function setFilter(f) {
+  state.filter = f;
+  $$(".chip").forEach((c) => c.classList.toggle("active", c.dataset.f === f));
+  renderGrid();
+}
+
+function observeReveals() {
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e, i) => {
+      if (e.isIntersecting) {
+        e.target.style.animationDelay = (i % 6) * 70 + "ms";
+        e.target.classList.add("in");
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.12 });
+  $$(".reveal").forEach((el) => io.observe(el));
+}
+
+window.addEventListener("scroll", () => {
+  $(".nav")?.classList.toggle("scrolled", window.scrollY > 8);
+}, { passive: true });
+
+function goShop() {
+  setView("home");
+  setTimeout(() => document.getElementById("shop")?.scrollIntoView({ behavior: "smooth" }), 60);
+}
+
+function currentUser() {
+  if (MELVRA.hasSession()) return { role: "admin", name: "Studio", username: MELVRA.DEFAULT_USER };
+  const c = MELVRA.customerSession();
+  if (c) return { role: "customer", ...c };
+  return null;
+}
+
+function paintNavAuth() {
+  const u = currentUser();
+  const label = !u ? "Login" : u.role === "admin" ? "Studio" : u.name.split(" ")[0];
+  const action = !u ? "openAuth()" : u.role === "admin" ? "window.location.href='admin.html'" : "setView('account')";
+  ["nav-login", "mob-login"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = label;
+    el.setAttribute("onclick", action + ";return false;");
+  });
+}
+
+function openAuth() {
+  const u = currentUser();
+  if (u?.role === "admin") { window.location.href = "admin.html"; return; }
+  if (u?.role === "customer") { setView("account"); return; }
+  setView("login");
+}
+
+function renderAnnounce() {
+  const bar = $("#announce");
+  if (!bar) return;
+  const a = MELVRA.liveAnnouncement();
+  if (!a || sessionStorage.getItem("melvra.hide.note") === a.id) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  bar.innerHTML = `<span>${a.text}</span><button type="button" aria-label="Dismiss" onclick="sessionStorage.setItem('melvra.hide.note','${a.id}');renderAnnounce()">×</button>`;
+}
+
+function renderAuth(mode) {
+  const tab = mode || state.authTab || "in";
+  state.authTab = tab;
+  $("#view-auth").innerHTML = `
+    <div class="auth-wrap">
+      <div class="auth-copy">
+        <div class="eyebrow">Your place here</div>
+        <h1>${tab === "up" ? "Make a house name." : "Come back in."}</h1>
+        <p>${tab === "up"
+          ? "A customer account keeps your bag and orders. The atelier door is separate — only the studio key opens it."
+          : "Customers enter with their own username. The studio key opens admin control. One door, two rooms."}</p>
+      </div>
+      <div class="auth-card">
+        <div class="auth-tabs">
+          <button class="chip ${tab === "in" ? "active" : ""}" onclick="renderAuth('in')">Login</button>
+          <button class="chip ${tab === "up" ? "active" : ""}" onclick="renderAuth('up')">Create account</button>
+        </div>
+        ${tab === "up" ? `
+          <form onsubmit="doRegister(event)">
+            <label>Name</label><input name="name" required placeholder="Aanya Mehra">
+            <label>Username</label><input name="username" required placeholder="aanya">
+            <label>Password</label><input name="password" type="password" required>
+            <div class="auth-err" id="auth-err"></div>
+            <button class="btn btn-primary full" type="submit" style="margin-top:8px">Create account</button>
+          </form>` : `
+          <form onsubmit="doLogin(event)">
+            <label>Username</label><input name="username" required placeholder="your name or studio">
+            <label>Password</label><input name="password" type="password" required>
+            <div class="auth-err" id="auth-err"></div>
+            <button class="btn btn-primary full" type="submit" style="margin-top:8px">Enter</button>
+          </form>`}
+      </div>
+    </div>`;
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const user = String(fd.get("username") || "").trim();
+  const pass = String(fd.get("password") || "");
+  const err = $("#auth-err");
+  const admin = await MELVRA.checkLogin(user, pass);
+  if (admin) {
+    MELVRA.setSession();
+    paintNavAuth();
+    window.location.href = "admin.html";
+    return;
+  }
+  const res = await MELVRA.loginCustomer(user, pass);
+  if (!res.ok) {
+    if (err) err.textContent = res.reason || "Could not enter.";
+    return;
+  }
+  paintNavAuth();
+  toastMsg("Welcome back, " + res.user.name);
+  setView("account");
+}
+
+async function doRegister(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const res = await MELVRA.registerUser({
+    name: fd.get("name"),
+    username: fd.get("username"),
+    password: fd.get("password")
+  });
+  const err = $("#auth-err");
+  if (!res.ok) {
+    if (err) err.textContent = res.reason;
+    return;
+  }
+  await MELVRA.loginCustomer(fd.get("username"), fd.get("password"));
+  paintNavAuth();
+  toastMsg("Account ready");
+  setView("account");
+}
+
+function logoutUser() {
+  MELVRA.clearCustomer();
+  MELVRA.clearSession();
+  paintNavAuth();
+  toastMsg("Signed out");
+  setView("home");
+}
+
+function renderAccount() {
+  const u = currentUser();
+  if (!u || u.role === "admin") {
+    if (u?.role === "admin") { window.location.href = "admin.html"; return; }
+    setView("login");
+    return;
+  }
+  const mine = MELVRA.orders().filter((o) => o.email === u.username || o.user === u.username || o.name === u.name);
+  $("#view-account").innerHTML = `
+    <div class="account-page">
+      <div class="eyebrow">House account</div>
+      <div class="section-head">
+        <h2>${u.name}</h2>
+        <p>@${u.username} · customer</p>
+      </div>
+      <div class="qty-row" style="margin-bottom:28px">
+        <button class="btn btn-ghost" onclick="setView('home')">Continue shopping</button>
+        <button class="btn btn-ghost" onclick="logoutUser()">Sign out</button>
+      </div>
+      <h3 style="font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:500;margin-bottom:14px">Your orders</h3>
+      ${mine.length ? `<div class="cart-list">${mine.map((o) => `
+        <div class="cart-item" style="grid-template-columns:1fr auto">
+          <div>
+            <h4>${o.id}</h4>
+            <div class="meta">${new Date(o.at).toLocaleDateString("en-IN")} · ${o.status || "New"}</div>
+          </div>
+          <b>${inr(o.total)}</b>
+        </div>`).join("")}</div>` : `<p style="color:var(--muted)">No orders yet.</p>`}
+    </div>`;
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  renderGrid();
+  renderHomeReviews();
+  renderSpotlight();
+  updateBadge();
+  observeReveals();
+  paintNavAuth();
+  renderAnnounce();
+  setTimeout(() => $("#loader")?.classList.add("hide"), 900);
+
+  // Live updates: when admin changes something in the studio, every open
+  // shop tab reflects it automatically — no refresh needed.
+  MELVRA.startSync((type) => {
+    if (type === "catalog") {
+      if (state.view === "home") renderGrid();
+      if (state.view === "product") renderProduct();
+      if (state.view === "cart") renderCart();
+      renderSpotlight();
+    }
+    if (type === "settings") {
+      if (state.view === "cart" || state.view === "checkout") renderCart();
+      renderSpotlight();
+    }
+    if (type === "announcements") renderAnnounce();
+  });
+});

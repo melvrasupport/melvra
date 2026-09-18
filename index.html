@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MELVRA — Handmade Cotton</title>
+  <meta name="description" content="MELVRA handmade cotton bracelets and keychains. Quiet pieces, made in Jaipur." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Figtree:wght@400;500;560;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect fill='%23f3eee6' width='64' height='64'/><text x='32' y='42' text-anchor='middle' font-size='18' font-family='serif' fill='%23241e18'>M</text></svg>" />
+</head>
+<body>
+  <div class="loader" id="loader"><div class="mark">MELVRA</div></div>
+  <div class="announce" id="announce" hidden></div>
+
+  <header class="nav" id="nav">
+    <button class="icon-btn menu-btn" onclick="toggleMobile()" aria-label="Menu">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h14M3 10h14M3 14h14"/></svg>
+    </button>
+    <a class="brand" href="#" onclick="setView('home');return false;">
+      MELVRA
+      <small>Handmade cotton</small>
+    </a>
+    <nav class="nav-links">
+      <a href="#" data-view="home" class="active" onclick="setView('home');return false;">Home</a>
+      <a href="#shop" data-view="products" onclick="goShop();return false;">Products</a>
+      <a href="#reviews" onclick="setView('home');setTimeout(()=>document.getElementById('reviews').scrollIntoView({behavior:'smooth'}),50);return false;">Reviews</a>
+      <a href="#" data-view="login" id="nav-login" onclick="openAuth();return false;">Login</a>
+    </nav>
+    <div class="nav-right">
+      <button class="icon-btn" onclick="openDrawer()" aria-label="Bag">
+        <svg width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 7h13l-1.2 10.2a1.5 1.5 0 0 1-1.5 1.3H6.7a1.5 1.5 0 0 1-1.5-1.3L4 7z"/><path d="M8 7V5.5A2.5 2.5 0 0 1 10.5 3h0A2.5 2.5 0 0 1 13 5.5V7"/></svg>
+        <span class="cart-count">0</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="mobile-panel" id="mobile">
+    <a href="#" onclick="setView('home');return false;">Home</a>
+    <a href="#shop" onclick="goShop();return false;">Products</a>
+    <a href="#reviews" onclick="setView('home');setTimeout(()=>document.getElementById('reviews').scrollIntoView({behavior:'smooth'}),50);return false;">Reviews</a>
+    <a href="#" onclick="setView('cart');return false;">Bag</a>
+    <a href="#" id="mob-login" onclick="openAuth();return false;">Login</a>
+  </div>
+
+  <main class="app">
+    <section class="view active" id="view-home">
+      <div class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow">Est. atelier · Jaipur</div>
+          <h1>Cotton, tied<br><span>by hand.</span></h1>
+          <p class="lead">Bracelets and keychains in undyed and earth-dyed cotton. Quiet objects for everyday wear — made slowly, finished without noise.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#shop">Shop the collection</a>
+            <a class="btn btn-ghost" href="#reviews">Reviews</a>
+          </div>
+          <div class="hero-meta">
+            <div><strong>8</strong> pieces in house</div>
+            <div><strong>3–5</strong> days to ship</div>
+            <div><strong>₹999+</strong> free across India</div>
+          </div>
+        </div>
+        <a class="hero-visual" id="hero-spotlight" href="#" onclick="return false;" style="display:block;cursor:pointer">
+          <img id="hero-spotlight-img" src="images/gtZvn.jpg" alt="Featured MELVRA piece" />
+          <div class="hero-badge"><b id="hero-spotlight-name">Trio Stack</b><span id="hero-spotlight-label">Ivory · sand · clay</span></div>
+        </a>
+      </div>
+
+      <section class="section" id="shop">
+        <div class="section-inner">
+          <div class="section-head">
+            <h2>The collection</h2>
+            <p>Small runs. Cotton cord, brass that ages, knots that hold. Nothing plated, nothing loud.</p>
+          </div>
+          <div class="filters">
+            <button class="chip active" data-f="All" onclick="setFilter('All')">All</button>
+            <button class="chip" data-f="Bracelet" onclick="setFilter('Bracelet')">Bracelets</button>
+            <button class="chip" data-f="Keychain" onclick="setFilter('Keychain')">Keychains</button>
+            <button class="chip" data-f="Set" onclick="setFilter('Set')">Sets</button>
+          </div>
+          <div class="grid" id="product-grid"></div>
+        </div>
+      </section>
+
+      <section class="section" id="reviews">
+        <div class="section-inner">
+          <div class="reviews-wrap">
+            <div class="rating-hero reveal">
+              <div class="eyebrow">From the wrist</div>
+              <div class="big">4.8</div>
+              <div class="stars" style="margin:10px 0">★★★★★</div>
+              <p style="color:var(--muted);font-size:14px">Average from verified notes across the collection. Pieces are packed in undyed cotton, not plastic windows.</p>
+            </div>
+            <div class="review-grid" id="review-grid"></div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section class="view" id="view-product"></section>
+    <section class="view" id="view-cart"></section>
+    <section class="view" id="view-auth"></section>
+    <section class="view" id="view-account"></section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <div class="brand">MELVRA<small>Handmade cotton</small></div>
+        <p>Bracelets and keychains made by hand in Jaipur. Cotton that softens. Brass that clouds. Objects meant to stay on.</p>
+      </div>
+      <div>
+        <h5>Shop</h5>
+        <a href="#shop" onclick="setView('home')">Bracelets</a>
+        <a href="#shop" onclick="setView('home')">Keychains</a>
+        <a href="#shop" onclick="setView('home')">Sets</a>
+      </div>
+      <div>
+        <h5>House</h5>
+        <a href="#reviews" onclick="setView('home')">Reviews</a>
+        <a href="#" onclick="setView('cart')">Bag</a>
+      </div>
+      <div>
+        <h5>Notes</h5>
+        <a href="#">Shipping in 3–5 days</a>
+        <a href="#">Free above ₹999</a>
+        <a href="#">hello@melvra.in</a>
+      </div>
+    </div>
+    <div class="copy">
+      <span>© 2026 MELVRA</span>
+      <span>Jaipur, India</span>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast"></div>
+  <div class="overlay" id="overlay" onclick="closeDrawer()"></div>
+  <aside class="drawer" id="drawer">
+    <header>
+      <h3>Bag</h3>
+      <button class="icon-btn" onclick="closeDrawer()" aria-label="Close">✕</button>
+    </header>
+    <div class="drawer-body" id="drawer-body"></div>
+    <div class="drawer-foot">
+      <div class="row total"><span>Total</span><span id="drawer-total">₹0</span></div>
+      <button class="btn btn-primary full" style="margin-top:14px" onclick="setView('cart')">View bag & checkout</button>
+    </div>
+  </aside>
+
+  <!-- Firebase (shared, real-time data — see js/firebase-config.js) -->
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

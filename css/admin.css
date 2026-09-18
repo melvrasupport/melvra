@@ -1,0 +1,176 @@
+:root {
+  --bg: #efe8dc;
+  --paper: #fbf8f2;
+  --ink: #241e18;
+  --ink-2: #4a433b;
+  --muted: #7a7168;
+  --line: #d8cfc2;
+  --accent: #7c4f32;
+  --ok: #3d5a3e;
+  --warn: #9a6b2f;
+  --danger: #8a3a2a;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: "Figtree", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font-family: inherit; }
+button { cursor: pointer; border: 0; background: none; }
+a { color: inherit; text-decoration: none; }
+img { display: block; max-width: 100%; }
+
+.gate {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 32px 16px;
+}
+.gate-card {
+  width: min(420px, 100%);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 36px 32px 28px;
+  animation: in 0.5s var(--ease);
+}
+.gate-card .brand {
+  letter-spacing: 0.42em;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.gate-card h1 {
+  font-family: "Cormorant Garamond", serif;
+  font-weight: 500;
+  font-size: 38px;
+  line-height: 1;
+  margin: 8px 0 10px;
+}
+.gate-card p { color: var(--muted); font-size: 14px; margin-bottom: 22px; }
+label { display: block; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 12px 0 6px; }
+input, select, textarea {
+  width: 100%;
+  height: 46px;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 10px;
+  padding: 0 12px;
+  color: var(--ink);
+  outline: none;
+}
+textarea { height: 88px; padding: 10px 12px; resize: vertical; }
+input:focus, select:focus, textarea:focus { border-color: var(--ink); }
+.err { color: var(--danger); font-size: 13px; min-height: 18px; margin-top: 8px; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 46px; padding: 0 18px; border-radius: 999px;
+  font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+  transition: transform 0.3s var(--ease), background 0.3s;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--ink); color: var(--paper); width: 100%; margin-top: 16px; }
+.btn-ghost { border: 1px solid var(--line); color: var(--ink); }
+.btn-danger { color: var(--danger); border: 1px solid #e4cfc8; }
+.btn-sm { height: 34px; padding: 0 12px; font-size: 11px; }
+
+.shell { display: none; min-height: 100%; }
+.shell.on { display: grid; grid-template-columns: 240px 1fr; }
+.side {
+  background: #e7dfd2;
+  border-right: 1px solid var(--line);
+  padding: 28px 18px;
+  position: sticky; top: 0; height: 100vh;
+}
+.side .brand { letter-spacing: 0.4em; font-size: 13px; margin-bottom: 4px; }
+.side small { color: var(--muted); letter-spacing: 0.18em; font-size: 10px; text-transform: uppercase; }
+.side nav { margin-top: 36px; display: flex; flex-direction: column; gap: 4px; }
+.side nav button {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.side nav button.on, .side nav button:hover { background: var(--paper); color: var(--ink); }
+.side .out { margin-top: auto; position: absolute; bottom: 24px; left: 18px; right: 18px; }
+
+.main { padding: 32px 36px 60px; }
+.top {
+  display: flex; justify-content: space-between; align-items: end;
+  margin-bottom: 28px; gap: 16px;
+}
+.top h2 {
+  font-family: "Cormorant Garamond", serif;
+  font-size: 40px; font-weight: 500; line-height: 1;
+}
+.top p { color: var(--muted); font-size: 14px; }
+
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
+.stat {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px;
+}
+.stat span { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.stat b { display: block; font-family: "Cormorant Garamond", serif; font-size: 32px; font-weight: 500; margin-top: 6px; }
+
+.panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: middle; }
+th { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+tr:last-child td { border-bottom: 0; }
+.thumb { width: 52px; height: 40px; object-fit: cover; border-radius: 8px; background: #e7dfd2; }
+.pill {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+.pill.on { background: #e3eee4; color: var(--ok); }
+.pill.off { background: #f3e6e2; color: var(--danger); }
+.pill.warn { background: #f3ead8; color: var(--warn); }
+.actions { display: flex; gap: 6px; }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.form-grid .full { grid-column: 1 / -1; }
+.editor { padding: 22px; }
+.hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+.toast {
+  position: fixed; right: 20px; bottom: 20px;
+  background: var(--ink); color: var(--paper);
+  padding: 12px 16px; border-radius: 12px;
+  transform: translateY(16px); opacity: 0;
+  transition: 0.4s var(--ease); z-index: 20;
+}
+.toast.show { transform: none; opacity: 1; }
+
+@keyframes in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.page { display: none; animation: in 0.4s var(--ease); }
+.page.on { display: block; }
+
+@media (max-width: 900px) {
+  .shell.on { grid-template-columns: 1fr; }
+  .side { position: relative; height: auto; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  .form-grid { grid-template-columns: 1fr; }
+  .main { padding: 20px 16px 48px; }
+}
+
+/* Studio back button: mobile-first quick way back, avoids relying on the browser's own back gesture */
+.studio-back { display: none; margin: 0 0 14px 0; }
+@media (max-width: 900px) {
+  .studio-back { display: inline-flex; }
+}
