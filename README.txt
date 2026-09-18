@@ -70,3 +70,27 @@ somewhere real (e.g. Netlify, GitHub Pages, your own server) — opening
 index.html directly as a local file, or viewing it inside Claude's
 artifact preview, will not load the Firebase scripts because of
 browser/security restrictions in those environments.
+
+WHAT'S NEW (this update)
+=========================
+- Orders now always sort newest-first, in the Studio and on the
+  dashboard (a date-sorting bug was making them appear out of order).
+- A Delivered order automatically disappears from Orders 10 days
+  after being marked Delivered. Its full record is kept forever in
+  the new Bills tab.
+- New "Bills" section in the Studio sidebar: a permanent log of every
+  order ever placed (who, what, when, coupon used, totals) — nothing
+  here is ever auto-deleted.
+- In Orders/Bills → Details: the email opens Gmail compose, the phone
+  number opens the dialer, and the address has an "Open in Google
+  Maps" link.
+- Product editor's Category field now offers every category already
+  in use, plus "+ Custom category…" to type a brand-new one.
+- Fixed a glitch where deleting every product from the catalog would
+  bring the original starter products back. Deleting all products now
+  correctly leaves the catalog empty.
+- The homepage now shows one section per category (a "Latest" or
+  "Trending" section, for example) with a "See more" button once a
+  category has more than 8 pieces. A brand-new category you create
+  automatically appears as the top section; reorder sections anytime
+  from Studio → Products → "Homepage sections".

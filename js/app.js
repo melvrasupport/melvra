@@ -58,6 +58,7 @@ function setView(view, id) {
   } else {
     $("#view-home").classList.add("active");
     renderGrid();
+    renderCategorySections();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   $$(".nav-links a").forEach((a) => a.classList.toggle("active", a.dataset.view === (view === "product" ? "products" : view)));
@@ -105,6 +106,7 @@ function toggleWish(id, ev) {
   else state.wishes.push(id);
   save();
   renderGrid();
+  renderCategorySections();
 }
 
 function updateBadge() {
@@ -165,6 +167,50 @@ function renderGrid() {
   grid.innerHTML = list.length ? list.map(productCard).join("") : `<p style="color:var(--muted)">Nothing in this shelf right now.</p>`;
   const meta = document.querySelector(".hero-meta strong");
   if (meta) meta.textContent = PRODUCTS().length;
+  renderFilterChips();
+  observeReveals();
+}
+
+// Chips are generated from whatever categories are actually in use, so a
+// brand-new (custom) category shows up here automatically — no more fixed
+// Bracelet/Keychain/Set list.
+function renderFilterChips() {
+  const wrap = $("#filters");
+  if (!wrap) return;
+  const cats = MELVRA.categoryOrder();
+  wrap.innerHTML = `<button class="chip ${state.filter === "All" ? "active" : ""}" data-f="All" onclick="setFilter('All')">All</button>`
+    + cats.map((c) => `<button class="chip ${state.filter === c ? "active" : ""}" data-f="${c}" onclick="setFilter('${c}')">${c}</button>`).join("");
+}
+
+// One homepage section per category, newest-created category first (that
+// order comes straight from MELVRA.categoryOrder()). Each section caps at
+// SECTION_CAP pieces with a "See more" button that reuses the full,
+// filterable grid below.
+const SECTION_CAP = 8;
+function renderCategorySections() {
+  const container = $("#category-sections");
+  if (!container) return;
+  const cats = MELVRA.categoryOrder();
+  const live = PRODUCTS();
+  container.innerHTML = cats.map((cat) => {
+    const items = live.filter((p) => p.category === cat);
+    if (!items.length) return "";
+    const shown = items.slice(0, SECTION_CAP);
+    return `
+      <section class="section cat-section">
+        <div class="section-inner">
+          <div class="section-head">
+            <h2>${cat}</h2>
+            <p>${items.length} piece${items.length === 1 ? "" : "s"} in this shelf.</p>
+          </div>
+          <div class="grid">${shown.map(productCard).join("")}</div>
+          ${items.length > SECTION_CAP ? `
+            <div style="text-align:center;margin-top:28px">
+              <button class="btn btn-ghost" onclick="setFilter('${cat}');document.getElementById('shop').scrollIntoView({behavior:'smooth'})">See more ${cat.toLowerCase()}</button>
+            </div>` : ""}
+        </div>
+      </section>`;
+  }).join("");
   observeReveals();
 }
 
@@ -673,6 +719,7 @@ function renderAccount() {
 
 window.addEventListener("DOMContentLoaded", () => {
   renderGrid();
+  renderCategorySections();
   renderHomeReviews();
   renderSpotlight();
   updateBadge();
@@ -685,10 +732,13 @@ window.addEventListener("DOMContentLoaded", () => {
   // shop tab reflects it automatically — no refresh needed.
   MELVRA.startSync((type) => {
     if (type === "catalog") {
-      if (state.view === "home") renderGrid();
+      if (state.view === "home") { renderGrid(); renderCategorySections(); }
       if (state.view === "product") renderProduct();
       if (state.view === "cart") renderCart();
       renderSpotlight();
+    }
+    if (type === "categories") {
+      if (state.view === "home") { renderFilterChips(); renderCategorySections(); }
     }
     if (type === "settings") {
       if (state.view === "cart" || state.view === "checkout") renderCart();

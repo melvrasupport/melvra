@@ -1,4 +1,4 @@
-/* MELVRA shared store — catalog, coupons, orders, settings */
+/* MELVRA shared store — catalog, coupons, orders, bills, categories, settings */
 (function (global) {
   /* ---------------------------------------------------------------
      CLOUD SYNC (Firebase Firestore)
@@ -38,7 +38,14 @@
     fsdb.collection(collection).doc(String(id)).delete().catch((e) => console.error("Cloud delete failed:", collection, id, e));
   }
 
-  const seeded = { products: false, coupons: false, settings: false, notes: false };
+  const seeded = { products: false, coupons: false, settings: false, notes: false, categories: false };
+
+  // Order timestamps can be an ISO string (new Date().toISOString()) — always
+  // compare them as real Date objects, never subtract the raw strings.
+  function orderTime(o) {
+    const t = new Date(o && o.at).getTime();
+    return isNaN(t) ? 0 : t;
+  }
 
   function startSync(onChange) {
     if (!fsdb) return false;
@@ -51,11 +58,14 @@
         DEFAULT_PRODUCTS.forEach((p) => cloudSetDoc("products", p.id, p));
         return;
       }
+      // Always mirror the live Firestore state locally — including an empty
+      // list — once seeding has happened once. Skipping the write when the
+      // list is empty is what made deleted products "come back": the local
+      // copy kept the old data and catalog() treated an empty save as "no
+      // save yet" and re-served the defaults.
       const list = snap.docs.map((d) => d.data());
-      if (list.length) {
-        write(KEYS.catalog, list);
-        onChange && onChange("catalog");
-      }
+      write(KEYS.catalog, list);
+      onChange && onChange("catalog");
     }, (e) => console.error("Catalog sync error:", e));
 
     fsdb.doc("melvra/coupons").onSnapshot((doc) => {
@@ -82,6 +92,18 @@
       }
     }, (e) => console.error("Settings sync error:", e));
 
+    fsdb.doc("melvra/categories").onSnapshot((doc) => {
+      if (!doc.exists && !seeded.categories) {
+        seeded.categories = true;
+        cloudSet("melvra/categories", { list: deriveCategoryOrder() });
+        return;
+      }
+      if (doc.exists) {
+        write(KEYS.categories, doc.data().list || []);
+        onChange && onChange("categories");
+      }
+    }, (e) => console.error("Category sync error:", e));
+
     fsdb.doc("melvra/announcements").onSnapshot((doc) => {
       if (!doc.exists && !seeded.notes) {
         seeded.notes = true;
@@ -95,10 +117,20 @@
     }, (e) => console.error("Announcement sync error:", e));
 
     fsdb.collection("orders").onSnapshot((snap) => {
-      const list = snap.docs.map((d) => d.data()).sort((a, b) => (b.at || 0) - (a.at || 0));
+      const list = snap.docs.map((d) => d.data()).sort((a, b) => orderTime(b) - orderTime(a));
       write(KEYS.orders, list);
+      purgeExpiredDeliveries();
       onChange && onChange("orders");
     }, (e) => console.error("Orders sync error:", e));
+
+    // Bills: a permanent, append-only record of every order ever placed.
+    // Unlike the "orders" collection (which admin can clean up), nothing
+    // ever removes a document from here.
+    fsdb.collection("bills").onSnapshot((snap) => {
+      const list = snap.docs.map((d) => d.data()).sort((a, b) => orderTime(b) - orderTime(a));
+      write(KEYS.bills, list);
+      onChange && onChange("bills");
+    }, (e) => console.error("Bills sync error:", e));
 
     return true;
   }
@@ -107,6 +139,8 @@
     catalog: "melvra.catalog",
     coupons: "melvra.coupons",
     orders: "melvra.orders",
+    bills: "melvra.bills",
+    categories: "melvra.categories",
     settings: "melvra.settings",
     pass: "melvra.admin.pass",
     session: "melvra.admin.session",
@@ -117,6 +151,10 @@
 
   const DEFAULT_PASS_SHA = "a64a9b3cc1f78f6c4d9ee8b2320dfea633b7ae2c3ee6140335982a7b5ea7d656";
   const DEFAULT_USER = "studio";
+
+  // How long a Delivered order stays in the active Orders tab before it is
+  // auto-removed. The full record survives forever in Bills.
+  const DELIVERED_RETENTION_DAYS = 10;
 
   const DEFAULT_PRODUCTS = [
     { id: "dune-knot", name: "Dune Knot", category: "Bracelet", price: 649, compare: 799, rating: 4.8, reviewCount: 126, tag: "Bestseller", image: "images/qmOsP.jpg", gallery: ["images/qmOsP.jpg", "images/gtZvn.jpg", "images/wJAeE.jpg", "images/5Mm9H.jpg"], blurb: "A double-cord knot in sun-washed sand. Tied by hand, worn every day.", desc: "The Dune Knot is our quiet signature — two strands of hand-finished cotton, gathered with a sliding knot that sits soft against the wrist. No clasp. No shine that shouts. Just the kind of piece you forget is there until someone asks about it.", specs: { Material: "Hand-spun cotton cord", Finish: "Waxed sliding knot", Size: "Adjustable 14–20 cm", Origin: "Made in Jaipur" }, stock: 28, visible: true },
@@ -159,7 +197,12 @@
 
   function catalog() {
     const saved = read(KEYS.catalog, null);
-    return saved && Array.isArray(saved) && saved.length ? saved : DEFAULT_PRODUCTS.map((p) => ({ ...p }));
+    // IMPORTANT: only fall back to the starter catalog when nothing has ever
+    // been saved (saved === null). An explicitly emptied catalog (saved is
+    // an array of length 0, because every product was deleted) must stay
+    // empty — treating "[]" the same as "never saved" was the bug that made
+    // deleted products reappear.
+    return saved && Array.isArray(saved) ? saved : DEFAULT_PRODUCTS.map((p) => ({ ...p }));
   }
   function saveCatalog(list) { write(KEYS.catalog, list); }
   function liveProducts() {
@@ -176,6 +219,7 @@
     else { list.push(prod); saved = prod; }
     saveCatalog(list);
     cloudSetDoc("products", saved.id, saved);
+    if (saved.category) ensureCategory(saved.category);
     return list;
   }
   function deleteProduct(id) {
@@ -189,6 +233,47 @@
     p.stock = Math.max(0, (p.stock || 0) + delta);
     saveCatalog(list);
     cloudMergeDoc("products", id, { stock: p.stock });
+  }
+
+  /* ---------------------------------------------------------------
+     CATEGORIES — controls which homepage sections exist and in what
+     order. A brand-new category (typed as "Custom" on a product) is
+     placed at the very top; existing ones keep their relative order
+     underneath.
+  --------------------------------------------------------------- */
+  function deriveCategoryOrder() {
+    const seen = [];
+    catalog().forEach((p) => { if (p.category && !seen.includes(p.category)) seen.push(p.category); });
+    return seen;
+  }
+  function categoryOrder() {
+    const saved = read(KEYS.categories, null);
+    if (saved && Array.isArray(saved) && saved.length) return saved;
+    return deriveCategoryOrder();
+  }
+  function saveCategoryOrder(list) {
+    write(KEYS.categories, list);
+    cloudSet("melvra/categories", { list });
+  }
+  function ensureCategory(name) {
+    if (!name) return;
+    const list = categoryOrder();
+    if (!list.includes(name)) {
+      list.unshift(name);
+      saveCategoryOrder(list);
+    }
+  }
+  function moveCategory(name, dir) {
+    const list = categoryOrder();
+    const i = list.indexOf(name);
+    if (i < 0) return;
+    const j = i + dir;
+    if (j < 0 || j >= list.length) return;
+    const tmp = list[i]; list[i] = list[j]; list[j] = tmp;
+    saveCategoryOrder(list);
+  }
+  function removeCategory(name) {
+    saveCategoryOrder(categoryOrder().filter((c) => c !== name));
   }
 
   function coupons() { return read(KEYS.coupons, DEFAULT_COUPONS.map((c) => ({ ...c }))); }
@@ -229,17 +314,56 @@
     }
   }
 
-  function orders() { return read(KEYS.orders, []); }
+  /* ---------------------------------------------------------------
+     ORDERS (active/working list, shown in Studio → Orders) and
+     BILLS (permanent record of every order ever placed, shown in
+     Studio → Bills; never auto-deleted).
+  --------------------------------------------------------------- */
+  function orders() {
+    return read(KEYS.orders, []).slice().sort((a, b) => orderTime(b) - orderTime(a));
+  }
   function addOrder(order) {
     const list = orders();
     list.unshift(order);
     write(KEYS.orders, list);
     cloudSetDoc("orders", order.id, order);
+    // Also record it permanently in Bills — this copy is never removed by
+    // the delivered-order cleanup below.
+    const billList = bills();
+    billList.unshift(order);
+    write(KEYS.bills, billList);
+    cloudSetDoc("bills", order.id, order);
   }
   function updateOrder(id, patch) {
-    const list = orders().map((o) => (o.id === id ? { ...o, ...patch } : o));
+    const next = { ...patch };
+    if (patch.status === "Delivered") next.deliveredAt = new Date().toISOString();
+    const list = orders().map((o) => (o.id === id ? { ...o, ...next } : o));
     write(KEYS.orders, list);
-    cloudMergeDoc("orders", id, patch);
+    cloudMergeDoc("orders", id, next);
+    // Keep the permanent bill record's status in sync too, without ever
+    // removing the bill itself.
+    const billList = bills().map((o) => (o.id === id ? { ...o, ...next } : o));
+    write(KEYS.bills, billList);
+    cloudMergeDoc("bills", id, next);
+  }
+  function deleteOrder(id) {
+    write(KEYS.orders, orders().filter((o) => o.id !== id));
+    cloudDeleteDoc("orders", id);
+    // Bills are untouched on purpose — this only clears the working queue.
+  }
+  // Removes Delivered orders from the active queue once they have sat there
+  // for DELIVERED_RETENTION_DAYS. Their full record stays in Bills forever.
+  function purgeExpiredDeliveries() {
+    const cutoff = Date.now() - DELIVERED_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const list = orders();
+    const stale = list.filter((o) => o.status === "Delivered" && new Date(o.deliveredAt || o.at).getTime() <= cutoff);
+    if (!stale.length) return false;
+    stale.forEach((o) => deleteOrder(o.id));
+    return true;
+  }
+
+  function bills() {
+    return read(KEYS.bills, []).slice().sort((a, b) => orderTime(b) - orderTime(a));
   }
 
   function settings() { return { ...DEFAULT_SETTINGS, ...read(KEYS.settings, {}) }; }
@@ -340,13 +464,18 @@
     localStorage.removeItem(KEYS.orders);
     localStorage.removeItem(KEYS.settings);
     localStorage.removeItem(KEYS.notes);
+    localStorage.removeItem(KEYS.categories);
+    // Bills are the permanent record — a reset intentionally does not
+    // touch KEYS.bills.
   }
 
   global.MELVRA = {
     KEYS, DEFAULT_USER, DEFAULT_PRODUCTS,
     catalog, saveCatalog, liveProducts, findProduct, upsertProduct, deleteProduct, adjustStock,
+    categoryOrder, saveCategoryOrder, ensureCategory, moveCategory, removeCategory,
     coupons, saveCoupons, upsertCoupon, deleteCoupon, applyCoupon, markCouponUsed,
-    orders, addOrder, updateOrder,
+    orders, addOrder, updateOrder, deleteOrder, purgeExpiredDeliveries, bills,
+    DELIVERED_RETENTION_DAYS,
     settings, saveSettings,
     checkLogin, setSession, hasSession, clearSession, setPassword,
     users, findUser, registerUser, loginCustomer, customerSession, clearCustomer,

@@ -1,6 +1,7 @@
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
+const CUSTOM_CAT = "__custom__";
 
 const ui = { page: "dash", editId: null, couponId: null };
 
@@ -53,6 +54,7 @@ function go(page, skipHistory) {
   if (page === "products") renderProducts();
   if (page === "coupons") renderCoupons();
   if (page === "orders") renderOrders();
+  if (page === "bills") renderBills();
   if (page === "notes") renderNotes();
   if (page === "settings") renderSettings();
 }
@@ -89,10 +91,13 @@ function renderDash() {
   $("#dash-coupons").textContent = activeC + " codes active";
 }
 
+/* ---------------------------------------------------------------
+   PRODUCTS + CATEGORY (homepage-section) ORDERING
+--------------------------------------------------------------- */
 function renderProducts() {
   const list = MELVRA.catalog();
   $("#prod-count").textContent = list.length + " in catalog";
-  $("#prod-table").innerHTML = list.map((p) => `
+  $("#prod-table").innerHTML = list.length ? list.map((p) => `
     <tr>
       <td><img class="thumb" src="${p.image}" alt=""></td>
       <td><b>${p.name}</b><div class="hint">${p.id}</div></td>
@@ -105,8 +110,33 @@ function renderProducts() {
         <button class="btn btn-ghost btn-sm" onclick="toggleVis('${p.id}')">${p.visible === false ? "Show" : "Hide"}</button>
         <button class="btn btn-danger btn-sm" onclick="removeProduct('${p.id}')">Delete</button>
       </td>
-    </tr>`).join("");
+    </tr>`).join("") : `<tr><td colspan="7">No pieces in the catalog right now.</td></tr>`;
   $("#prod-editor").style.display = "none";
+  renderCategoryOrder();
+}
+
+function renderCategoryOrder() {
+  const box = $("#cat-order");
+  if (!box) return;
+  const cats = MELVRA.categoryOrder();
+  box.innerHTML = cats.length ? cats.map((c, i) => `
+    <div class="cat-row">
+      <span class="cat-name">${c}</span>
+      <div class="cat-actions">
+        <button class="btn btn-ghost btn-sm" title="Move up" ${i === 0 ? "disabled" : ""} onclick="bumpCategory('${c}', -1)">↑</button>
+        <button class="btn btn-ghost btn-sm" title="Move down" ${i === cats.length - 1 ? "disabled" : ""} onclick="bumpCategory('${c}', 1)">↓</button>
+        <button class="btn btn-danger btn-sm" title="Remove this homepage section (products keep this category, they just won't get their own section)" onclick="dropCategory('${c}')">Remove section</button>
+      </div>
+    </div>`).join("") : `<p class="hint">Categories you use on products will appear here — the top one becomes the first section on the homepage.</p>`;
+}
+function bumpCategory(name, dir) {
+  MELVRA.moveCategory(name, dir);
+  renderCategoryOrder();
+}
+function dropCategory(name) {
+  if (!confirm("Remove \"" + name + "\" as its own homepage section? Products keep this category and still show up under \"All\".")) return;
+  MELVRA.removeCategory(name);
+  renderCategoryOrder();
 }
 
 function newProduct() {
@@ -126,7 +156,7 @@ function editProduct(id) {
 function fillEditor(p) {
   $("#prod-editor").style.display = "block";
   $("#e-name").value = p.name || "";
-  $("#e-cat").value = p.category || "Bracelet";
+  fillCategorySelect(p.category);
   $("#e-price").value = p.price || 0;
   $("#e-compare").value = p.compare || "";
   $("#e-stock").value = p.stock ?? 0;
@@ -139,6 +169,29 @@ function fillEditor(p) {
   ui.gallery = (p.gallery && p.gallery.length) ? [...p.gallery] : (p.image ? [p.image] : []);
   renderGalleryEditor();
   $("#prod-editor").scrollIntoView({ behavior: "smooth" });
+}
+// Category dropdown is built from every category already in use, plus a
+// "Custom…" option that reveals a free-text box — so admin is never stuck
+// picking from a fixed list.
+function fillCategorySelect(current) {
+  const sel = $("#e-cat");
+  const known = MELVRA.categoryOrder();
+  const cats = [...known];
+  if (current && !cats.includes(current)) cats.push(current);
+  sel.innerHTML = cats.map((c) => `<option value="${c}">${c}</option>`).join("")
+    + `<option value="${CUSTOM_CAT}">+ Custom category…</option>`;
+  sel.value = current && cats.includes(current) ? current : (cats[0] || CUSTOM_CAT);
+  onCategoryChange();
+}
+function onCategoryChange() {
+  const box = $("#e-cat-custom");
+  if (!box) return;
+  box.style.display = $("#e-cat").value === CUSTOM_CAT ? "block" : "none";
+}
+function currentCategoryValue() {
+  const sel = $("#e-cat").value;
+  if (sel !== CUSTOM_CAT) return sel;
+  return ($("#e-cat-custom").value || "").trim();
 }
 function renderGalleryEditor() {
   const box = $("#e-gallery");
@@ -203,13 +256,15 @@ function saveProduct(e) {
   e.preventDefault();
   const name = $("#e-name").value.trim();
   if (!name) return toast("A name is required.");
+  const category = currentCategoryValue();
+  if (!category) return toast("Enter a category name.");
   const existing = ui.editId ? MELVRA.findProduct(ui.editId) : {};
   const gallery = (ui.gallery && ui.gallery.length) ? ui.gallery : (existing.gallery && existing.gallery.length ? existing.gallery : ["images/qmOsP.jpg"]);
   const prod = {
     ...existing,
     id: ui.editId || MELVRA.slug(name),
     name,
-    category: $("#e-cat").value,
+    category,
     price: Number($("#e-price").value) || 0,
     compare: Number($("#e-compare").value) || 0,
     stock: Number($("#e-stock").value) || 0,
@@ -316,8 +371,40 @@ function removeCoupon(id) {
 }
 function cancelCoupon() { $("#coup-editor").style.display = "none"; }
 
+/* ---------------------------------------------------------------
+   ORDERS (working queue — sorted newest first, Delivered orders age
+   out automatically) and BILLS (permanent record of every order).
+--------------------------------------------------------------- */
+function daysLeftBadge(o) {
+  if (o.status !== "Delivered") return "";
+  const deliveredAt = new Date(o.deliveredAt || o.at).getTime();
+  const daysGone = (Date.now() - deliveredAt) / (24 * 60 * 60 * 1000);
+  const left = Math.max(0, Math.ceil(MELVRA.DELIVERED_RETENTION_DAYS - daysGone));
+  return `<div class="hint">Auto-removes from Orders in ${left} day${left === 1 ? "" : "s"} (kept in Bills)</div>`;
+}
+
+// Shared "details" block used by both Orders and Bills — email opens Gmail,
+// phone opens the dialer, address opens Google Maps.
+function orderDetailsBlock(o) {
+  const gmailHref = o.email ? "https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(o.email) : "";
+  const mapsHref = o.address ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(o.address) : "";
+  return `
+    <div style="background:var(--panel-2,#f6f1e8);border-radius:10px;padding:14px 16px;display:grid;gap:6px;font-size:14px">
+      <div><b>Name:</b> ${o.name || "—"}</div>
+      <div><b>Email:</b> ${o.email ? `<a href="${gmailHref}" target="_blank" rel="noopener" style="text-decoration:underline">${o.email}</a>` : "—"}</div>
+      <div><b>Phone:</b> ${o.phone ? `<a href="tel:${o.phone}" style="text-decoration:underline">${o.phone}</a>` : "—"}</div>
+      <div><b>Address:</b> ${o.address || "—"} ${mapsHref ? `<a href="${mapsHref}" target="_blank" rel="noopener" style="text-decoration:underline;margin-left:6px">Open in Google Maps ↗</a>` : ""}</div>
+      <div><b>Payment method:</b> ${o.pay || "—"}</div>
+      <div><b>Account:</b> ${o.user || "Guest checkout"}</div>
+      <div><b>Coupon used:</b> ${o.coupon || "—"}</div>
+      <div><b>Items:</b> ${(o.items || []).map((i) => i.name + " × " + i.qty + " (" + inr(i.price) + ")").join(", ") || "—"}</div>
+      <div><b>Subtotal:</b> ${inr(o.sub)} &nbsp; <b>Discount:</b> ${o.discount ? "−" + inr(o.discount) : "—"} &nbsp; <b>Shipping:</b> ${o.ship ? inr(o.ship) : "Free"}</div>
+    </div>`;
+}
+
 function renderOrders() {
-  const list = MELVRA.orders();
+  MELVRA.purgeExpiredDeliveries();
+  const list = MELVRA.orders(); // already sorted newest-first
   $("#ord-table").innerHTML = list.length ? list.map((o) => `
     <tr>
       <td><b>${o.id}</b><div class="hint">${new Date(o.at).toLocaleString("en-IN")}</div></td>
@@ -329,22 +416,12 @@ function renderOrders() {
         <select onchange="setStatus('${o.id}', this.value)">
           ${["New", "Packed", "Shipped", "Delivered", "Cancelled"].map((s) => `<option ${o.status === s ? "selected" : ""}>${s}</option>`).join("")}
         </select>
+        ${daysLeftBadge(o)}
       </td>
       <td><button class="btn btn-ghost btn-sm" onclick="toggleOrderDetails('${o.id}')">Details</button></td>
     </tr>
     <tr id="ord-details-${o.id}" style="display:none">
-      <td colspan="7">
-        <div style="background:var(--panel-2,#f6f1e8);border-radius:10px;padding:14px 16px;display:grid;gap:6px;font-size:14px">
-          <div><b>Name:</b> ${o.name || "—"}</div>
-          <div><b>Email:</b> ${o.email || "—"}</div>
-          <div><b>Phone:</b> ${o.phone || "—"}</div>
-          <div><b>Address:</b> ${o.address || "—"}</div>
-          <div><b>Payment method:</b> ${o.pay || "—"}</div>
-          <div><b>Account:</b> ${o.user || "Guest checkout"}</div>
-          <div><b>Items:</b> ${(o.items || []).map((i) => i.name + " × " + i.qty + " (" + inr(i.price) + ")").join(", ") || "—"}</div>
-          <div><b>Subtotal:</b> ${inr(o.sub)} &nbsp; <b>Discount:</b> ${o.discount ? "−" + inr(o.discount) : "—"} &nbsp; <b>Shipping:</b> ${o.ship ? inr(o.ship) : "Free"}</div>
-        </div>
-      </td>
+      <td colspan="7">${orderDetailsBlock(o)}</td>
     </tr>`).join("") : `<tr><td colspan="7">No orders yet.</td></tr>`;
 }
 function toggleOrderDetails(id) {
@@ -355,6 +432,30 @@ function toggleOrderDetails(id) {
 function setStatus(id, status) {
   MELVRA.updateOrder(id, { status });
   toast("Order " + id + " → " + status);
+  renderOrders();
+}
+
+function renderBills() {
+  const list = MELVRA.bills(); // permanent, never auto-removed
+  $("#bill-count").textContent = list.length + " recorded";
+  $("#bill-table").innerHTML = list.length ? list.map((o) => `
+    <tr>
+      <td><b>${o.id}</b><div class="hint">${new Date(o.at).toLocaleString("en-IN")}</div></td>
+      <td>${o.name}<div class="hint">${o.email || ""}</div></td>
+      <td>${(o.items || []).map((i) => i.name + " × " + i.qty).join(", ")}</td>
+      <td>${o.coupon ? o.coupon : "—"}</td>
+      <td>${inr(o.total)}</td>
+      <td><span class="pill ${o.status === "Delivered" ? "on" : o.status === "Cancelled" ? "off" : "warn"}">${o.status || "—"}</span></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="toggleBillDetails('${o.id}')">Details</button></td>
+    </tr>
+    <tr id="bill-details-${o.id}" style="display:none">
+      <td colspan="7">${orderDetailsBlock(o)}</td>
+    </tr>`).join("") : `<tr><td colspan="7">No bills recorded yet.</td></tr>`;
+}
+function toggleBillDetails(id) {
+  const row = $("#bill-details-" + id);
+  if (!row) return;
+  row.style.display = row.style.display === "none" ? "table-row" : "none";
 }
 
 function renderNotes() {
@@ -439,7 +540,7 @@ async function savePass(e) {
   toast("Password updated");
 }
 function resetAll() {
-  if (!confirm("Reset catalog, coupons and orders to the original atelier set?")) return;
+  if (!confirm("Reset catalog, coupons and orders to the original atelier set? (Bills history is kept.)")) return;
   MELVRA.resetDemo();
   toast("Studio reset");
   go(ui.page);
@@ -449,12 +550,25 @@ window.addEventListener("DOMContentLoaded", () => {
   if (MELVRA.hasSession()) openStudio();
   else showGate(true);
 
+  // Self-heal the Orders queue on every load, and periodically while the
+  // studio stays open, so a Delivered order disappears from Orders once its
+  // retention window has passed even without a fresh sync event.
+  MELVRA.purgeExpiredDeliveries();
+  setInterval(() => {
+    if (MELVRA.purgeExpiredDeliveries() && ui.page === "orders") renderOrders();
+  }, 60 * 60 * 1000);
+
   // Live updates: reflect changes made from another device/tab logged
   // into the same studio (e.g. teammate editing stock at the same time).
   MELVRA.startSync((type) => {
     if (type === "catalog" && (ui.page === "products" || ui.page === "dash")) go(ui.page);
+    if (type === "categories" && ui.page === "products") renderCategoryOrder();
     if (type === "coupons" && (ui.page === "coupons" || ui.page === "dash")) go(ui.page);
-    if (type === "orders" && (ui.page === "orders" || ui.page === "dash")) go(ui.page);
+    if (type === "orders") {
+      MELVRA.purgeExpiredDeliveries();
+      if (ui.page === "orders" || ui.page === "dash") go(ui.page);
+    }
+    if (type === "bills" && ui.page === "bills") renderBills();
     if (type === "announcements" && ui.page === "notes") go(ui.page);
     if (type === "settings" && ui.page === "settings") go(ui.page);
   });

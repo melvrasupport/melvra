@@ -36,6 +36,7 @@
         <button data-page="coupons" onclick="go('coupons')">Coupons</button>
         <button data-page="notes" onclick="go('notes')">Announcements</button>
         <button data-page="orders" onclick="go('orders')">Orders</button>
+        <button data-page="bills" onclick="go('bills')">Bills</button>
         <button data-page="settings" onclick="go('settings')">Settings</button>
         <a href="index.html" style="padding:10px 12px;display:block;color:var(--muted);font-size:14px">View shop ↗</a>
       </nav>
@@ -69,6 +70,15 @@
           <button class="btn btn-primary" style="width:auto" onclick="newProduct()">New piece</button>
         </div>
         <div class="panel" style="margin-bottom:18px">
+          <div class="top" style="margin-bottom:10px">
+            <div>
+              <h2 style="font-size:20px">Homepage sections</h2>
+              <p class="hint" style="margin:0">Order of the category sections on the shop's homepage. The newest category you create jumps to the top automatically — reorder anytime with the arrows.</p>
+            </div>
+          </div>
+          <div id="cat-order"></div>
+        </div>
+        <div class="panel" style="margin-bottom:18px">
           <table>
             <thead><tr><th></th><th>Piece</th><th>Type</th><th>Price</th><th>Stock</th><th>Shelf</th><th></th></tr></thead>
             <tbody id="prod-table"></tbody>
@@ -83,11 +93,8 @@
             <div class="form-grid">
               <div class="full"><label>Name</label><input id="e-name" required></div>
               <div><label>Category</label>
-                <select id="e-cat">
-                  <option>Bracelet</option>
-                  <option>Keychain</option>
-                  <option>Set</option>
-                </select>
+                <select id="e-cat" onchange="onCategoryChange()"></select>
+                <input id="e-cat-custom" placeholder="Type a category name" style="display:none;margin-top:8px">
               </div>
               <div><label>Tag</label><input id="e-tag" placeholder="Bestseller"></div>
               <div><label>Price ₹</label><input id="e-price" type="number" min="0"></div>
@@ -186,6 +193,21 @@
           <table>
             <thead><tr><th>Order</th><th>Customer</th><th>Pieces</th><th>Coupon</th><th>Total</th><th>Status</th><th></th></tr></thead>
             <tbody id="ord-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="page" id="page-bills">
+        <div class="top">
+          <div>
+            <h2>Bills</h2>
+            <p id="bill-count">Permanent record of every order ever placed — nothing here is auto-removed, even after an order is delivered and drops off the Orders tab.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <table>
+            <thead><tr><th>Order</th><th>Customer</th><th>Pieces</th><th>Coupon</th><th>Total</th><th>Status</th><th></th></tr></thead>
+            <tbody id="bill-table"></tbody>
           </table>
         </div>
       </section>
