@@ -219,27 +219,29 @@ function onGalleryFiles(input) {
   if (!ui.gallery) ui.gallery = [];
   let remaining = files.length;
   files.forEach((file) => {
-    resizeImageFile(file, 1000, 0.8).then((dataUrl) => {
+    resizeImageFile(file, 1080, 0.85).then((dataUrl) => {
       ui.gallery.push(dataUrl);
       remaining--;
       if (remaining === 0) { renderGalleryEditor(); input.value = ""; }
     });
   });
 }
-function resizeImageFile(file, maxDim, quality) {
+function resizeImageFile(file, targetSize, quality) {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
-        let { width, height } = img;
-        if (width > maxDim || height > maxDim) {
-          if (width > height) { height = Math.round(height * (maxDim / width)); width = maxDim; }
-          else { width = Math.round(width * (maxDim / height)); height = maxDim; }
-        }
+        // Every product photo on the site is shown at a 1:1 ratio, so we
+        // center-crop the source to a square before scaling it down —
+        // this keeps every image consistent regardless of the original
+        // photo's shape (portrait, landscape, etc).
+        const side = Math.min(img.width, img.height);
+        const sx = (img.width - side) / 2;
+        const sy = (img.height - side) / 2;
         const canvas = document.createElement("canvas");
-        canvas.width = width; canvas.height = height;
-        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        canvas.width = targetSize; canvas.height = targetSize;
+        canvas.getContext("2d").drawImage(img, sx, sy, side, side, 0, 0, targetSize, targetSize);
         resolve(canvas.toDataURL("image/jpeg", quality));
       };
       img.onerror = () => resolve(reader.result);
