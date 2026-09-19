@@ -205,16 +205,22 @@ body::before {
   position: relative;
   overflow: hidden;
   background: var(--bg-deep);
+  margin: 28px 40px 28px 0;
+  border-radius: 26px;
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .hero-visual img {
   width: 100%; height: 100%;
-  object-fit: cover;
-  transform: scale(1.06);
-  animation: ken 18s ease-in-out infinite alternate;
+  object-fit: contain;
+  padding: 32px;
+  animation: heroFloat 9s var(--ease) infinite alternate;
 }
-@keyframes ken {
-  from { transform: scale(1.06) translate(0,0); }
-  to { transform: scale(1.12) translate(-1.5%, -1%); }
+@keyframes heroFloat {
+  from { transform: scale(1) translateY(0); }
+  to { transform: scale(1.025) translateY(-6px); }
 }
 .hero-badge {
   position: absolute;
@@ -453,6 +459,21 @@ body::before {
 .who b { display: block; font-size: 14px; }
 .who small { color: var(--muted); font-size: 12px; }
 .review p { color: var(--ink-2); font-size: 14px; }
+
+/* STAR PICKER (customer review submission) */
+.star-picker { display: flex; gap: 6px; margin-bottom: 4px; }
+.star-btn {
+  font-size: 30px;
+  line-height: 1;
+  color: var(--line-2);
+  background: none;
+  border: none;
+  padding: 2px;
+  transition: color 0.25s var(--ease), transform 0.2s var(--ease);
+}
+.star-btn:hover { transform: scale(1.12); }
+.star-btn:active { transform: scale(0.92); }
+.star-btn.filled { color: var(--gold); }
 
 /* PRODUCT PAGE */
 .pdp { padding: 28px 32px 80px; max-width: 1240px; margin: 0 auto; }
@@ -764,8 +785,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink); }
   .menu-btn { display: grid; }
   .hero { min-height: auto; }
   .hero-copy { padding: 40px 24px; }
-  .hero-visual { height: 52vh; }
-  .hero-visual img { height: 52vh; }
+  .hero-visual { height: 46vh; margin: 0 20px 32px; border-radius: 20px; }
+  .hero-visual img { padding: 20px; }
   .section { padding: 64px 20px; }
   .nav { padding: 0 16px; }
   .review-grid { grid-template-columns: 1fr; }
@@ -775,8 +796,34 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink); }
   .grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 640px) {
-  .grid { grid-template-columns: 1fr; }
+  body { overflow-x: hidden; }
+  .section { padding: 40px 12px; }
+  .section-head { margin-bottom: 22px; }
+  /* 3-products-per-row mobile grid — cards resize to fit, desktop grid
+     (repeat(3,1fr) at wide widths, 2-up at tablet above) is untouched. */
+  .grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .card { border-radius: 12px; }
+  .card:hover { transform: none; }
+  .card-tag { top: 6px; left: 6px; padding: 3px 6px; font-size: 8px; letter-spacing: 0.06em; }
+  .wish { top: 6px; right: 6px; width: 24px; height: 24px; font-size: 13px; }
+  .card-body { padding: 8px 8px 10px; }
+  .card-cat { font-size: 8px; letter-spacing: 0.08em; margin-bottom: 3px; }
+  .card-body h3 { font-size: 13px; line-height: 1.15; margin-bottom: 6px; }
+  .card-row { flex-direction: column; align-items: stretch; gap: 6px; }
+  .price { font-size: 12px; }
+  .stars { font-size: 8px; }
+  .stars span { font-size: 8px; margin-left: 3px; }
+  .add-mini { width: 100%; height: 26px; padding: 0 6px; font-size: 9px; letter-spacing: 0.06em; }
+  .filters { gap: 6px; margin-bottom: 20px; }
+  .chip { height: 30px; padding: 0 12px; font-size: 11px; }
+
   .hero h1 { font-size: 46px; }
+  .hero-meta { gap: 18px; flex-wrap: wrap; margin-top: 32px; }
+  /* Mobile hero/spotlight — smaller, correctly proportioned, no crop */
+  .hero-visual { height: 34vh; margin: 0 14px 28px; border-radius: 16px; }
+  .hero-visual img { padding: 14px; animation-duration: 7s; }
+  .hero-badge { left: 14px; bottom: 14px; padding: 10px 14px; }
+
   .cart-item { grid-template-columns: 86px 1fr; }
   .cart-item .right { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; }
 }

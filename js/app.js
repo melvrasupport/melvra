@@ -1,11 +1,6 @@
-const REVIEWS = [
-  { name: "Aanya M.", city: "Jaipur", stars: 5, text: "Wore the Dune Knot for three weeks without taking it off. Softened, never frayed. This is the opposite of costume jewellery.", product: "Dune Knot" },
-  { name: "Rohit S.", city: "Delhi", stars: 5, text: "Gifted Tide Charm to my sister. The brass already looks lived-in. Packaging was as considered as the piece.", product: "Tide Charm" },
-  { name: "Meher K.", city: "Mumbai", stars: 4, text: "Ivory Thread is barely there, which I wanted. Sits well with a watch. Wish there was a longer option for stacking higher.", product: "Ivory Thread" },
-  { name: "Kabir D.", city: "Bengaluru", stars: 5, text: "Night Slide feels expensive in the hand. The brass slider is the whole design. Wearing it to work every day.", product: "Night Slide" },
-  { name: "Sana R.", city: "Udaipur", stars: 5, text: "Trio Stack arrived tied in linen. Colours are quieter than the photos — better, actually. Will order Clay Twin next.", product: "Trio Stack" },
-  { name: "Ishaan P.", city: "Pune", stars: 4, text: "Olive Braid has real weight. Not a festival bracelet. More like something you keep for years.", product: "Olive Braid" }
-];
+// Currently-selected star rating in whatever product review form is open.
+// Reset whenever a product page is (re)rendered for a different piece.
+let reviewDraftStars = 0;
 
 const state = {
   view: "home",
@@ -25,6 +20,7 @@ const state = {
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
+const escapeHtml = (s) => String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const save = () => {
   localStorage.setItem("melvra-cart", JSON.stringify(state.cart));
   localStorage.setItem("melvra-wish", JSON.stringify(state.wishes));
@@ -42,6 +38,7 @@ function setView(view, id) {
   state.qty = 1;
   state.checkout = false;
   state.ordered = view === "ordered" ? true : false;
+  reviewDraftStars = 0;
   $$(".view").forEach((v) => v.classList.remove("active"));
   if (view === "product") {
     $("#view-product").classList.add("active");
@@ -139,6 +136,9 @@ function toastMsg(msg) {
 function productCard(p) {
   const on = state.wishes.includes(p.id);
   const out = (p.stock || 0) < 1;
+  const rt = MELVRA.productRating(p.id);
+  const starsHtml = rt.count ? "★".repeat(Math.round(rt.avg)) + "☆".repeat(5 - Math.round(rt.avg)) : "☆☆☆☆☆";
+  const ratingLabel = rt.count ? `${rt.avg.toFixed(1)} · ${rt.count}` : "New";
   return `
     <article class="card reveal" onclick="setView('product','${p.id}')">
       <div class="card-media">
@@ -152,7 +152,7 @@ function productCard(p) {
         <div class="card-row">
           <div>
             <div class="price">${inr(p.price)}</div>
-            <div class="stars">★★★★★ <span>${p.rating || "—"} · ${p.reviewCount || 0}</span></div>
+            <div class="stars">${starsHtml} <span>${ratingLabel}</span></div>
           </div>
           <button class="add-mini" onclick="event.stopPropagation(); addToCart('${p.id}')" ${out ? "disabled" : ""}>${out ? "Out" : "Add"}</button>
         </div>
@@ -165,7 +165,7 @@ function renderGrid() {
   const grid = $("#product-grid");
   if (!grid) return;
   grid.innerHTML = list.length ? list.map(productCard).join("") : `<p style="color:var(--muted)">Nothing in this shelf right now.</p>`;
-  const meta = document.querySelector(".hero-meta strong");
+  const meta = $("#meta-pieces");
   if (meta) meta.textContent = PRODUCTS().length;
   renderFilterChips();
   observeReveals();
@@ -229,20 +229,40 @@ function renderSpotlight() {
   el.onclick = () => { setView("product", p.id); window.scrollTo({ top: 0, behavior: "smooth" }); return false; };
 }
 
-function renderHomeReviews() {
-  const el = $("#review-grid");
-  if (!el) return;
-  el.innerHTML = REVIEWS.map((r) => `
+// Shared card markup for a real customer review — used on the homepage
+// (across all products) and on a product page (that product only).
+function reviewCardHTML(r, showProduct) {
+  const initial = (r.name || "?").trim().charAt(0).toUpperCase() || "?";
+  const dateStr = new Date(r.at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  return `
     <article class="review reveal">
       <header>
         <div class="who">
-          <div class="avatar">${r.name[0]}</div>
-          <div><b>${r.name}</b><small>${r.city} · ${r.product}</small></div>
+          <div class="avatar">${initial}</div>
+          <div><b>${escapeHtml(r.name || "Verified buyer")}</b><small>${showProduct ? escapeHtml(r.productName || "") + " · " : ""}${dateStr}</small></div>
         </div>
-        <div class="stars">${"★".repeat(r.stars)}${"☆".repeat(5 - r.stars)}</div>
+        <div class="stars">${"★".repeat(r.stars || 0)}${"☆".repeat(5 - (r.stars || 0))}</div>
       </header>
-      <p>${r.text}</p>
-    </article>`).join("");
+      <p>${escapeHtml(r.text)}</p>
+    </article>`;
+}
+
+function renderHomeReviews() {
+  const el = $("#review-grid");
+  if (!el) return;
+  const list = MELVRA.reviews().slice(0, 6);
+  el.innerHTML = list.length
+    ? list.map((r) => reviewCardHTML(r, true)).join("")
+    : `<p style="color:var(--muted)">No reviews yet — pieces are new to the world. Be the first to share yours after your order arrives.</p>`;
+  const overall = MELVRA.overallRating();
+  const bigEl = document.querySelector(".rating-hero .big");
+  const starsEl = document.querySelector(".rating-hero .stars");
+  const capEl = document.querySelector(".rating-hero p");
+  if (bigEl) bigEl.textContent = overall.count ? overall.avg.toFixed(1) : "—";
+  if (starsEl) starsEl.textContent = overall.count ? "★".repeat(Math.round(overall.avg)) + "☆".repeat(5 - Math.round(overall.avg)) : "☆☆☆☆☆";
+  if (capEl) capEl.textContent = overall.count
+    ? `Average from ${overall.count} verified customer review${overall.count === 1 ? "" : "s"} across the collection.`
+    : "No verified reviews yet — every piece is waiting for its first note.";
 }
 
 function renderProduct() {
@@ -251,8 +271,10 @@ function renderProduct() {
   const gallery = (p.gallery && p.gallery.length ? p.gallery : [p.image]);
   const img = gallery[state.galleryIndex] || p.image;
   const related = PRODUCTS().filter((x) => x.id !== p.id && (x.category === p.category || x.category === "Set")).slice(0, 3);
-  const reviews = REVIEWS.filter((r) => r.product === p.name);
-  const extra = reviews.length ? reviews : REVIEWS.slice(0, 2);
+  const productReviews = MELVRA.reviewsForProduct(p.id);
+  const rt = MELVRA.productRating(p.id);
+  const starsHtml = rt.count ? "★".repeat(Math.round(rt.avg)) + "☆".repeat(5 - Math.round(rt.avg)) : "☆☆☆☆☆";
+  const alreadyReviewed = MELVRA.hasReviewed(p.id);
   const specs = p.specs || {};
   const out = (p.stock || 0) < 1;
   const s = settings();
@@ -270,7 +292,7 @@ function renderProduct() {
         <div class="pdp-info">
           <div class="eyebrow">${p.tag || p.category} · Handmade</div>
           <h1>${p.name}</h1>
-          <div class="stars">★★★★★ <span>${p.rating || "—"} · ${p.reviewCount || 0} reviews</span></div>
+          <div class="stars">${starsHtml} <span>${rt.count ? rt.avg.toFixed(1) + " · " + rt.count + " review" + (rt.count === 1 ? "" : "s") : "No reviews yet"}</span></div>
           <div class="pdp-price"><span class="now">${inr(p.price)}</span>${p.compare ? `<span class="was">${inr(p.compare)}</span>` : ""}</div>
           <p class="desc">${p.desc || p.blurb || ""}</p>
           <dl class="specs">${Object.entries(specs).map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}
@@ -285,7 +307,7 @@ function renderProduct() {
             <button class="btn btn-primary" style="flex:1" ${out ? "disabled" : ""} onclick="addToCart('${p.id}', state.qty)">${out ? "Sold out" : "Add to bag"}</button>
           </div>
           <button class="btn btn-ghost full" ${out ? "disabled" : ""} onclick="addToCart('${p.id}', state.qty, true); setView('cart')">Buy now</button>
-          <p class="buy-note">Free shipping across India on orders above ${inr(s.freeShip)}. Packed in undyed cotton. Ships in 3–5 days.</p>
+          <p class="buy-note">Free shipping across India on orders above ${inr(s.freeShip)}. Packed in undyed cotton. Ships in 7–8 days.</p>
         </div>
       </div>
 
@@ -297,21 +319,66 @@ function renderProduct() {
       <div class="section" style="padding:40px 0 0">
         <div class="section-head">
           <h2>Reviews</h2>
-          <p>${p.rating || "—"} average from ${p.reviewCount || 0} verified notes.</p>
+          <p>${rt.count ? rt.avg.toFixed(1) + " average from " + rt.count + " verified note" + (rt.count === 1 ? "" : "s") + "." : "No verified notes yet."}</p>
         </div>
         <div class="review-grid">
-          ${extra.map((r) => `
-            <article class="review">
-              <header>
-                <div class="who"><div class="avatar">${r.name[0]}</div><div><b>${r.name}</b><small>${r.city}</small></div></div>
-                <div class="stars">${"★".repeat(r.stars)}</div>
-              </header>
-              <p>${r.text}</p>
-            </article>`).join("")}
+          ${productReviews.length
+            ? productReviews.map((r) => reviewCardHTML(r, false)).join("")
+            : `<p style="color:var(--muted)">No reviews yet for this piece — be the first to share yours.</p>`}
+        </div>
+        <div class="form reveal" style="max-width:520px;margin-top:28px">
+          <h3 style="font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:500;margin-bottom:14px">Write a review</h3>
+          ${alreadyReviewed
+            ? `<p style="color:var(--muted)">You've already reviewed this piece — thank you for sharing your note.</p>`
+            : `<form onsubmit="submitReview(event,'${p.id}')">
+                <label>Your rating</label>
+                <div class="star-picker" id="star-picker">
+                  ${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="star-btn" data-star="${n}" onmouseenter="hoverStars(${n})" onmouseleave="hoverStars(0)" onclick="pickStars(${n})" aria-label="${n} star${n > 1 ? "s" : ""}">★</button>`).join("")}
+                </div>
+                <label>Your name (optional)</label>
+                <input id="review-name" placeholder="${currentUser()?.name || "Your name"}">
+                <label>Your review</label>
+                <textarea id="review-text" placeholder="How does it wear? What did you notice?" required></textarea>
+                <button class="btn btn-primary" type="submit" style="margin-top:16px;width:auto">Submit review</button>
+              </form>`}
         </div>
       </div>
     </div>`;
   observeReveals();
+}
+
+function hoverStars(n) {
+  $$("#star-picker .star-btn").forEach((btn) => {
+    const v = Number(btn.dataset.star);
+    btn.classList.toggle("filled", v <= (n || reviewDraftStars));
+  });
+}
+function pickStars(n) {
+  reviewDraftStars = n;
+  hoverStars(0);
+}
+function submitReview(e, productId) {
+  e.preventDefault();
+  const p = findP(productId);
+  if (!p) return;
+  if (!reviewDraftStars) return toastMsg("Please select a star rating.");
+  const text = ($("#review-text")?.value || "").trim();
+  if (text.length < 8) return toastMsg("Tell us a little more about your experience.");
+  if (MELVRA.hasReviewed(productId)) return toastMsg("You've already reviewed this piece.");
+  const name = ($("#review-name")?.value || "").trim() || currentUser()?.name || "Verified buyer";
+  MELVRA.addReview({
+    id: "rv-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6),
+    productId,
+    productName: p.name,
+    name: name.slice(0, 60),
+    stars: reviewDraftStars,
+    text: text.slice(0, 600),
+    at: new Date().toISOString(),
+    device: MELVRA.deviceId()
+  });
+  reviewDraftStars = 0;
+  toastMsg("Thank you — your review is live.");
+  renderProduct();
 }
 
 function totals() {
@@ -393,7 +460,7 @@ function renderCart() {
         <div class="mark">✓</div>
         <div class="eyebrow">Order confirmed</div>
         <h2>Thank you.</h2>
-        <p style="color:var(--muted);max-width:420px;margin:10px auto 8px">Your pieces are being packed in Jaipur. Order <b>${state.orderNo}</b>.</p>
+        <p style="color:var(--muted);max-width:420px;margin:10px auto 8px">Your pieces are being packed with care in Delhi. Order <b>${state.orderNo}</b>.</p>
         <p style="color:var(--muted);margin-bottom:26px">A note will arrive on email shortly. This is a demonstration checkout — no payment was taken.</p>
         <button class="btn btn-primary" onclick="state.ordered=false;setView('home')">Back to the atelier</button>
       </div>`;
@@ -414,7 +481,7 @@ function renderCart() {
             <label>Phone</label><input name="phone" required placeholder="+91">
             <label>Address</label><textarea name="address" required placeholder="House, street, area"></textarea>
             <div class="two">
-              <div><label>City</label><input name="city" required placeholder="Jaipur"></div>
+              <div><label>City</label><input name="city" required placeholder="Delhi"></div>
               <div><label>PIN</label><input name="pin" required placeholder="302001"></div>
             </div>
             <label>Payment</label>
@@ -717,7 +784,31 @@ function renderAccount() {
     </div>`;
 }
 
+// Pushes the admin-editable brand name, tagline, business email and
+// free-shipping threshold into the live DOM — these were previously only
+// saved to settings and never actually rendered on the storefront.
+function applyBrandSettings() {
+  const s = settings();
+  const brand = s.brand || "MELVRA";
+  const tagline = s.tagline || "Handmade cotton";
+  $$("#brand-name, #footer-brand-name").forEach((el) => { el.textContent = brand; });
+  $$("#brand-tag, #footer-brand-tag").forEach((el) => { el.textContent = tagline; });
+  const emailEl = $("#footer-email");
+  if (emailEl && s.email) {
+    emailEl.textContent = s.email;
+    emailEl.href = "mailto:" + s.email;
+  }
+  const freeMetaEl = $("#meta-freeship");
+  if (freeMetaEl) freeMetaEl.textContent = inr(s.freeShip) + "+";
+  const freeNoteEl = $("#footer-freeship-note");
+  if (freeNoteEl) freeNoteEl.textContent = `Free Shipping Across India on Orders Above ${inr(s.freeShip)}.`;
+  const copyBrandEl = $("#footer-copy-brand");
+  if (copyBrandEl) copyBrandEl.textContent = "© " + new Date().getFullYear() + " " + brand;
+  document.title = brand + " — " + tagline;
+}
+
 window.addEventListener("DOMContentLoaded", () => {
+  applyBrandSettings();
   renderGrid();
   renderCategorySections();
   renderHomeReviews();
@@ -743,7 +834,12 @@ window.addEventListener("DOMContentLoaded", () => {
     if (type === "settings") {
       if (state.view === "cart" || state.view === "checkout") renderCart();
       renderSpotlight();
+      applyBrandSettings();
     }
     if (type === "announcements") renderAnnounce();
+    if (type === "reviews") {
+      if (state.view === "home") renderHomeReviews();
+      if (state.view === "product") renderProduct();
+    }
   });
 });

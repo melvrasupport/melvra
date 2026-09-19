@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MELVRA — Handmade Cotton</title>
-  <meta name="description" content="MELVRA handmade cotton bracelets and keychains. Quiet pieces, made in Jaipur." />
+  <meta name="description" content="MELVRA handmade cotton bracelets and keychains. Quiet pieces, made in Delhi." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Figtree:wght@400;500;560;600&display=swap" rel="stylesheet" />
@@ -20,8 +20,8 @@
       <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h14M3 10h14M3 14h14"/></svg>
     </button>
     <a class="brand" href="#" onclick="setView('home');return false;">
-      MELVRA
-      <small>Handmade cotton</small>
+      <span id="brand-name">MELVRA</span>
+      <small id="brand-tag">Handmade cotton</small>
     </a>
     <nav class="nav-links">
       <a href="#" data-view="home" class="active" onclick="setView('home');return false;">Home</a>
@@ -49,7 +49,6 @@
     <section class="view active" id="view-home">
       <div class="hero">
         <div class="hero-copy">
-          <div class="eyebrow">Est. atelier · Jaipur</div>
           <h1>Cotton, tied<br><span>by hand.</span></h1>
           <p class="lead">Bracelets and keychains in undyed and earth-dyed cotton. Quiet objects for everyday wear — made slowly, finished without noise.</p>
           <div class="hero-actions">
@@ -57,9 +56,9 @@
             <a class="btn btn-ghost" href="#reviews">Reviews</a>
           </div>
           <div class="hero-meta">
-            <div><strong>8</strong> pieces in house</div>
-            <div><strong>3–5</strong> days to ship</div>
-            <div><strong>₹999+</strong> free across India</div>
+            <div><strong id="meta-pieces">8</strong> pieces in house</div>
+            <div><strong>7–8</strong> days to ship</div>
+            <div><strong id="meta-freeship">₹599+</strong> free across India</div>
           </div>
         </div>
         <a class="hero-visual" id="hero-spotlight" href="#" onclick="return false;" style="display:block;cursor:pointer">
@@ -74,7 +73,7 @@
         <div class="section-inner">
           <div class="section-head">
             <h2>The collection</h2>
-            <p>Small runs. Cotton cord, brass that ages, knots that hold. Nothing plated, nothing loud.</p>
+            <p>Handmade Magic, One Stitch at a Time.</p>
           </div>
           <div class="filters" id="filters"></div>
           <div class="grid" id="product-grid"></div>
@@ -86,9 +85,9 @@
           <div class="reviews-wrap">
             <div class="rating-hero reveal">
               <div class="eyebrow">From the wrist</div>
-              <div class="big">4.8</div>
-              <div class="stars" style="margin:10px 0">★★★★★</div>
-              <p style="color:var(--muted);font-size:14px">Average from verified notes across the collection. Pieces are packed in undyed cotton, not plastic windows.</p>
+              <div class="big">—</div>
+              <div class="stars" style="margin:10px 0">☆☆☆☆☆</div>
+              <p style="color:var(--muted);font-size:14px">No verified reviews yet — every piece is waiting for its first note.</p>
             </div>
             <div class="review-grid" id="review-grid"></div>
           </div>
@@ -105,8 +104,8 @@
   <footer class="footer">
     <div class="footer-inner">
       <div>
-        <div class="brand">MELVRA<small>Handmade cotton</small></div>
-        <p>Bracelets and keychains made by hand in Jaipur. Cotton that softens. Brass that clouds. Objects meant to stay on.</p>
+        <div class="brand"><span id="footer-brand-name">MELVRA</span><small id="footer-brand-tag">Handmade cotton</small></div>
+        <p>Bracelets and keychains, handcrafted with love, one stitch at a time — made in Delhi. Cotton that softens. Brass that clouds. Objects meant to stay on.</p>
       </div>
       <div>
         <h5>Shop</h5>
@@ -121,14 +120,14 @@
       </div>
       <div>
         <h5>Notes</h5>
-        <a href="#">Shipping in 3–5 days</a>
-        <a href="#">Free above ₹999</a>
-        <a href="#">hello@melvra.in</a>
+        <a href="#">Shipping in 7–8 days</a>
+        <a href="#" id="footer-freeship-note">Free Shipping Across India on Orders Above ₹599.</a>
+        <a href="#" id="footer-email">hello@melvra.in</a>
       </div>
     </div>
     <div class="copy">
-      <span>© 2026 MELVRA</span>
-      <span>Jaipur, India</span>
+      <span id="footer-copy-brand">© 2026 MELVRA</span>
+      <span>Delhi, India</span>
     </div>
   </footer>
 

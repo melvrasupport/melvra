@@ -46,6 +46,10 @@
     const t = new Date(o && o.at).getTime();
     return isNaN(t) ? 0 : t;
   }
+  function reviewTime(r) {
+    const t = new Date(r && r.at).getTime();
+    return isNaN(t) ? 0 : t;
+  }
 
   function startSync(onChange) {
     if (!fsdb) return false;
@@ -132,6 +136,14 @@
       onChange && onChange("bills");
     }, (e) => console.error("Bills sync error:", e));
 
+    // Reviews: one Firestore document per customer review, shared and
+    // synced everywhere just like products. No seeding — starts empty.
+    fsdb.collection("reviews").onSnapshot((snap) => {
+      const list = snap.docs.map((d) => d.data()).sort((a, b) => reviewTime(b) - reviewTime(a));
+      write(KEYS.reviews, list);
+      onChange && onChange("reviews");
+    }, (e) => console.error("Reviews sync error:", e));
+
     return true;
   }
 
@@ -146,7 +158,9 @@
     session: "melvra.admin.session",
     users: "melvra.users",
     customer: "melvra.customer.session",
-    notes: "melvra.announcements"
+    notes: "melvra.announcements",
+    reviews: "melvra.reviews",
+    device: "melvra.device"
   };
 
   const DEFAULT_PASS_SHA = "a64a9b3cc1f78f6c4d9ee8b2320dfea633b7ae2c3ee6140335982a7b5ea7d656";
@@ -157,14 +171,14 @@
   const DELIVERED_RETENTION_DAYS = 10;
 
   const DEFAULT_PRODUCTS = [
-    { id: "dune-knot", name: "Dune Knot", category: "Bracelet", price: 649, compare: 799, rating: 4.8, reviewCount: 126, tag: "Bestseller", image: "images/qmOsP.jpg", gallery: ["images/qmOsP.jpg", "images/gtZvn.jpg", "images/wJAeE.jpg", "images/5Mm9H.jpg"], blurb: "A double-cord knot in sun-washed sand. Tied by hand, worn every day.", desc: "The Dune Knot is our quiet signature — two strands of hand-finished cotton, gathered with a sliding knot that sits soft against the wrist. No clasp. No shine that shouts. Just the kind of piece you forget is there until someone asks about it.", specs: { Material: "Hand-spun cotton cord", Finish: "Waxed sliding knot", Size: "Adjustable 14–20 cm", Origin: "Made in Jaipur" }, stock: 28, visible: true },
-    { id: "olive-braid", name: "Olive Braid", category: "Bracelet", price: 729, compare: 890, rating: 4.9, reviewCount: 88, tag: "New", image: "images/wFUCU.jpg", gallery: ["images/wFUCU.jpg", "images/wJAeE.jpg", "images/gtZvn.jpg", "images/5Mm9H.jpg"], blurb: "A dense three-strand braid in deep olive. Weight you can feel.", desc: "Braided slowly so each ridge holds. Olive Braid is thicker than our thread pieces — a small architecture of cotton that darkens slightly with wear and time. Finished with a sailor knot and two gathered ends.", specs: { Material: "Braided cotton rope", Finish: "Sailor knot + ball ends", Size: "Adjustable 15–21 cm", Origin: "Made in Jaipur" }, stock: 18, visible: true },
-    { id: "ivory-thread", name: "Ivory Thread", category: "Bracelet", price: 549, compare: 649, rating: 4.7, reviewCount: 204, tag: "Everyday", image: "images/bTn7N.jpg", gallery: ["images/bTn7N.jpg", "images/gtZvn.jpg", "images/qmOsP.jpg", "images/5Mm9H.jpg"], blurb: "A single ivory line and one small brass bead. Almost not there.", desc: "The lightest piece we make. A fine cotton thread, a brushed brass cylinder, and a knot that disappears under a cuff. Meant to be stacked or worn alone against bare skin.", specs: { Material: "Fine cotton thread + brass", Finish: "Brushed bead, sliding knot", Size: "Adjustable 14–20 cm", Origin: "Made in Jaipur" }, stock: 40, visible: true },
-    { id: "clay-twin", name: "Clay Twin", category: "Bracelet", price: 679, compare: 820, rating: 4.8, reviewCount: 61, tag: "Limited", image: "images/5LXUn.jpg", gallery: ["images/5LXUn.jpg", "images/gtZvn.jpg", "images/qmOsP.jpg", "images/5Mm9H.jpg"], blurb: "Two terracotta cords, one knot. Warm as fired clay.", desc: "Clay Twin is dyed in small batches so no two coils read the same rust. The double wrap sits close, the knot rides the outside of the wrist. A colour that looks like late light on sandstone.", specs: { Material: "Twin cotton cord", Finish: "Plant-dyed terracotta", Size: "Adjustable 14–20 cm", Origin: "Made in Jaipur" }, stock: 14, visible: true },
-    { id: "night-slide", name: "Night Slide", category: "Bracelet", price: 799, compare: 980, rating: 4.9, reviewCount: 47, tag: "Editor's", image: "images/16WlU.jpg", gallery: ["images/16WlU.jpg", "images/EPRmw.jpg", "images/bTn7N.jpg", "images/5Mm9H.jpg"], blurb: "Charcoal cord, a single brass slide. Evening, simplified.", desc: "Night Slide is the piece we reach for after dark. A charcoal cotton loop running through a hollow brass cylinder — the metal warms to the skin within minutes. Clean. Almost architectural.", specs: { Material: "Waxed cotton + brass slide", Finish: "Matte charcoal, brushed metal", Size: "Adjustable 15–21 cm", Origin: "Made in Jaipur" }, stock: 11, visible: true },
-    { id: "linen-fob", name: "Linen Fob", category: "Keychain", price: 399, compare: 499, rating: 4.6, reviewCount: 93, tag: "Utility", image: "images/NNa1D.jpg", gallery: ["images/NNa1D.jpg", "images/EPRmw.jpg", "images/5Mm9H.jpg", "images/16WlU.jpg"], blurb: "A short cotton strap and an aged brass ring. Pocket-quiet.", desc: "Cut from the same cotton we use on the bench, folded once and stitched. The Linen Fob is a small useful object — keys, a studio keycard, nothing more. Hardware is unlacquered brass that will cloud with use.", specs: { Material: "Woven cotton webbing", Finish: "Aged brass ring", Size: "8 cm drop", Origin: "Made in Jaipur" }, stock: 32, visible: true },
-    { id: "tide-charm", name: "Tide Charm", category: "Keychain", price: 449, compare: 560, rating: 4.8, reviewCount: 74, tag: "Gift", image: "images/EPRmw.jpg", gallery: ["images/EPRmw.jpg", "images/NNa1D.jpg", "images/16WlU.jpg", "images/5Mm9H.jpg"], blurb: "Ivory and ink, twisted into a loop. A charm that holds keys.", desc: "Two cords — cream and charcoal — twisted until they become one loop. Tide Charm hangs from a lobster clasp and a short brass chain. It knocks softly against a door, which is the point.", specs: { Material: "Twisted cotton + brass hardware", Finish: "Antique clasp", Size: "11 cm overall", Origin: "Made in Jaipur" }, stock: 22, visible: true },
-    { id: "trio-stack", name: "Trio Stack", category: "Set", price: 1290, compare: 1640, rating: 5.0, reviewCount: 39, tag: "Set", image: "images/wJAeE.jpg", gallery: ["images/wJAeE.jpg", "images/gtZvn.jpg", "images/qmOsP.jpg", "images/wFUCU.jpg"], blurb: "Ivory, olive, sand. Three bracelets, one quiet stack.", desc: "The way we wear them in the atelier. Three braided cords in ivory, olive and sand, sold together so the mix is already decided. Save against buying them apart. Tie once, leave on.", specs: { Material: "Three braided cotton bracelets", Finish: "Mixed earth tones", Size: "Each adjustable 14–20 cm", Origin: "Made in Jaipur" }, stock: 9, visible: true }
+    { id: "dune-knot", name: "Dune Knot", category: "Bracelet", price: 649, compare: 799, rating: 0, reviewCount: 0, tag: "Bestseller", image: "images/qmOsP.jpg", gallery: ["images/qmOsP.jpg", "images/gtZvn.jpg", "images/wJAeE.jpg", "images/5Mm9H.jpg"], blurb: "A double-cord knot in sun-washed sand. Tied by hand, worn every day.", desc: "The Dune Knot is our quiet signature — two strands of hand-finished cotton, gathered with a sliding knot that sits soft against the wrist. No clasp. No shine that shouts. Just the kind of piece you forget is there until someone asks about it.", specs: { Material: "Hand-spun cotton cord", Finish: "Waxed sliding knot", Size: "Adjustable 14–20 cm", Origin: "Made in Delhi" }, stock: 28, visible: true },
+    { id: "olive-braid", name: "Olive Braid", category: "Bracelet", price: 729, compare: 890, rating: 0, reviewCount: 0, tag: "New", image: "images/wFUCU.jpg", gallery: ["images/wFUCU.jpg", "images/wJAeE.jpg", "images/gtZvn.jpg", "images/5Mm9H.jpg"], blurb: "A dense three-strand braid in deep olive. Weight you can feel.", desc: "Braided slowly so each ridge holds. Olive Braid is thicker than our thread pieces — a small architecture of cotton that darkens slightly with wear and time. Finished with a sailor knot and two gathered ends.", specs: { Material: "Braided cotton rope", Finish: "Sailor knot + ball ends", Size: "Adjustable 15–21 cm", Origin: "Made in Delhi" }, stock: 18, visible: true },
+    { id: "ivory-thread", name: "Ivory Thread", category: "Bracelet", price: 549, compare: 649, rating: 0, reviewCount: 0, tag: "Everyday", image: "images/bTn7N.jpg", gallery: ["images/bTn7N.jpg", "images/gtZvn.jpg", "images/qmOsP.jpg", "images/5Mm9H.jpg"], blurb: "A single ivory line and one small brass bead. Almost not there.", desc: "The lightest piece we make. A fine cotton thread, a brushed brass cylinder, and a knot that disappears under a cuff. Meant to be stacked or worn alone against bare skin.", specs: { Material: "Fine cotton thread + brass", Finish: "Brushed bead, sliding knot", Size: "Adjustable 14–20 cm", Origin: "Made in Delhi" }, stock: 40, visible: true },
+    { id: "clay-twin", name: "Clay Twin", category: "Bracelet", price: 679, compare: 820, rating: 0, reviewCount: 0, tag: "Limited", image: "images/5LXUn.jpg", gallery: ["images/5LXUn.jpg", "images/gtZvn.jpg", "images/qmOsP.jpg", "images/5Mm9H.jpg"], blurb: "Two terracotta cords, one knot. Warm as fired clay.", desc: "Clay Twin is dyed in small batches so no two coils read the same rust. The double wrap sits close, the knot rides the outside of the wrist. A colour that looks like late light on sandstone.", specs: { Material: "Twin cotton cord", Finish: "Plant-dyed terracotta", Size: "Adjustable 14–20 cm", Origin: "Made in Delhi" }, stock: 14, visible: true },
+    { id: "night-slide", name: "Night Slide", category: "Bracelet", price: 799, compare: 980, rating: 0, reviewCount: 0, tag: "Editor's", image: "images/16WlU.jpg", gallery: ["images/16WlU.jpg", "images/EPRmw.jpg", "images/bTn7N.jpg", "images/5Mm9H.jpg"], blurb: "Charcoal cord, a single brass slide. Evening, simplified.", desc: "Night Slide is the piece we reach for after dark. A charcoal cotton loop running through a hollow brass cylinder — the metal warms to the skin within minutes. Clean. Almost architectural.", specs: { Material: "Waxed cotton + brass slide", Finish: "Matte charcoal, brushed metal", Size: "Adjustable 15–21 cm", Origin: "Made in Delhi" }, stock: 11, visible: true },
+    { id: "linen-fob", name: "Linen Fob", category: "Keychain", price: 399, compare: 499, rating: 0, reviewCount: 0, tag: "Utility", image: "images/NNa1D.jpg", gallery: ["images/NNa1D.jpg", "images/EPRmw.jpg", "images/5Mm9H.jpg", "images/16WlU.jpg"], blurb: "A short cotton strap and an aged brass ring. Pocket-quiet.", desc: "Cut from the same cotton we use on the bench, folded once and stitched. The Linen Fob is a small useful object — keys, a studio keycard, nothing more. Hardware is unlacquered brass that will cloud with use.", specs: { Material: "Woven cotton webbing", Finish: "Aged brass ring", Size: "8 cm drop", Origin: "Made in Delhi" }, stock: 32, visible: true },
+    { id: "tide-charm", name: "Tide Charm", category: "Keychain", price: 449, compare: 560, rating: 0, reviewCount: 0, tag: "Gift", image: "images/EPRmw.jpg", gallery: ["images/EPRmw.jpg", "images/NNa1D.jpg", "images/16WlU.jpg", "images/5Mm9H.jpg"], blurb: "Ivory and ink, twisted into a loop. A charm that holds keys.", desc: "Two cords — cream and charcoal — twisted until they become one loop. Tide Charm hangs from a lobster clasp and a short brass chain. It knocks softly against a door, which is the point.", specs: { Material: "Twisted cotton + brass hardware", Finish: "Antique clasp", Size: "11 cm overall", Origin: "Made in Delhi" }, stock: 22, visible: true },
+    { id: "trio-stack", name: "Trio Stack", category: "Set", price: 1290, compare: 1640, rating: 0, reviewCount: 0, tag: "Set", image: "images/wJAeE.jpg", gallery: ["images/wJAeE.jpg", "images/gtZvn.jpg", "images/qmOsP.jpg", "images/wFUCU.jpg"], blurb: "Ivory, olive, sand. Three bracelets, one quiet stack.", desc: "The way we wear them in the atelier. Three braided cords in ivory, olive and sand, sold together so the mix is already decided. Save against buying them apart. Tie once, leave on.", specs: { Material: "Three braided cotton bracelets", Finish: "Mixed earth tones", Size: "Each adjustable 14–20 cm", Origin: "Made in Delhi" }, stock: 9, visible: true }
   ];
 
   const DEFAULT_COUPONS = [
@@ -175,8 +189,8 @@
 
   const DEFAULT_SETTINGS = {
     brand: "MELVRA",
-    tagline: "Handmade cotton",
-    freeShip: 999,
+    tagline: "Handmade Cotton",
+    freeShip: 599,
     shipFee: 79,
     email: "hello@melvra.in",
     spotlightProductId: "trio-stack",
@@ -458,6 +472,55 @@
     cloudSet("melvra/announcements", { list });
   }
 
+  /* ---------------------------------------------------------------
+     REVIEWS — real customer ratings + written notes, one per
+     product per device (basic spam/duplicate guard). Ratings shown
+     anywhere on the shop are always calculated live from this list;
+     nothing here is pre-seeded or fake.
+  --------------------------------------------------------------- */
+  function deviceId() {
+    let id = localStorage.getItem(KEYS.device);
+    if (!id) {
+      id = "dev-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem(KEYS.device, id);
+    }
+    return id;
+  }
+  function reviews() {
+    return read(KEYS.reviews, []).slice().sort((a, b) => reviewTime(b) - reviewTime(a));
+  }
+  function reviewsForProduct(productId) {
+    return reviews().filter((r) => r.productId === productId);
+  }
+  function hasReviewed(productId) {
+    const id = deviceId();
+    return reviewsForProduct(productId).some((r) => r.device === id);
+  }
+  function addReview(review) {
+    const list = reviews();
+    list.unshift(review);
+    write(KEYS.reviews, list);
+    cloudSetDoc("reviews", review.id, review);
+  }
+  function deleteReview(id) {
+    write(KEYS.reviews, reviews().filter((r) => r.id !== id));
+    cloudDeleteDoc("reviews", id);
+  }
+  // Live rating for one product — never a stored/static number.
+  function productRating(productId) {
+    const list = reviewsForProduct(productId);
+    if (!list.length) return { avg: 0, count: 0 };
+    const sum = list.reduce((a, r) => a + (Number(r.stars) || 0), 0);
+    return { avg: Math.round((sum / list.length) * 10) / 10, count: list.length };
+  }
+  // Live storewide average, used on the homepage reviews hero.
+  function overallRating() {
+    const list = reviews();
+    if (!list.length) return { avg: 0, count: 0 };
+    const sum = list.reduce((a, r) => a + (Number(r.stars) || 0), 0);
+    return { avg: Math.round((sum / list.length) * 10) / 10, count: list.length };
+  }
+
   function resetDemo() {
     localStorage.removeItem(KEYS.catalog);
     localStorage.removeItem(KEYS.coupons);
@@ -480,6 +543,7 @@
     checkLogin, setSession, hasSession, clearSession, setPassword,
     users, findUser, registerUser, loginCustomer, customerSession, clearCustomer,
     announcements, saveAnnouncements, liveAnnouncement, upsertAnnouncement, deleteAnnouncement,
+    deviceId, reviews, reviewsForProduct, hasReviewed, addReview, deleteReview, productRating, overallRating,
     slug, resetDemo, sha256,
     startSync, isCloudReady: () => cloudReady
   };

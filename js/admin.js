@@ -2,6 +2,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
 const CUSTOM_CAT = "__custom__";
+const escapeHtml = (s) => String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 const ui = { page: "dash", editId: null, couponId: null };
 
@@ -56,6 +57,7 @@ function go(page, skipHistory) {
   if (page === "orders") renderOrders();
   if (page === "bills") renderBills();
   if (page === "notes") renderNotes();
+  if (page === "reviews") renderReviews();
   if (page === "settings") renderSettings();
 }
 function studioBack() {
@@ -75,11 +77,13 @@ function renderDash() {
   const revenue = orders.reduce((a, o) => a + (o.total || 0), 0);
   const low = products.filter((p) => (p.stock || 0) <= 8).length;
   const activeC = MELVRA.coupons().filter((c) => c.active).length;
+  const reviewCount = MELVRA.reviews().length;
   $("#dash-stats").innerHTML = `
     <div class="stat"><span>Live pieces</span><b>${live.length}</b></div>
     <div class="stat"><span>Orders</span><b>${orders.length}</b></div>
     <div class="stat"><span>Recorded total</span><b>${inr(revenue)}</b></div>
-    <div class="stat"><span>Low stock</span><b>${low}</b></div>`;
+    <div class="stat"><span>Low stock</span><b>${low}</b></div>
+    <div class="stat"><span>Reviews</span><b>${reviewCount}</b></div>`;
   const recent = orders.slice(0, 6);
   $("#dash-orders").innerHTML = recent.length ? recent.map((o) => `
     <tr>
@@ -144,7 +148,7 @@ function newProduct() {
   fillEditor({
     name: "", category: "Bracelet", price: 599, compare: 699, stock: 10,
     tag: "New", visible: true, image: "images/qmOsP.jpg", gallery: ["images/qmOsP.jpg"],
-    desc: "", blurb: "", rating: 5, reviewCount: 0
+    desc: "", blurb: "", rating: 0, reviewCount: 0
   });
 }
 function editProduct(id) {
@@ -276,9 +280,9 @@ function saveProduct(e) {
     desc: $("#e-desc").value.trim(),
     blurb: $("#e-desc").value.trim().slice(0, 120),
     visible: ($("#e-live-select") ? $("#e-live-select").value === "1" : $("#e-live").checked),
-    rating: existing.rating || 5,
+    rating: existing.rating || 0,
     reviewCount: existing.reviewCount || 0,
-    specs: existing.specs || { Material: "Hand-spun cotton", Origin: "Made in Jaipur" }
+    specs: existing.specs || { Material: "Hand-spun cotton", Origin: "Made in Delhi" }
   };
   MELVRA.upsertProduct(prod);
   toast(prod.name + " saved");
@@ -502,6 +506,30 @@ function removeNote(id) {
   renderNotes();
 }
 
+/* ---------------------------------------------------------------
+   REVIEWS — moderate real customer ratings/notes. Ratings shown on
+   the shop are always calculated live from what's left here.
+--------------------------------------------------------------- */
+function renderReviews() {
+  const list = MELVRA.reviews();
+  $("#review-count").textContent = list.length + " submitted";
+  $("#review-table").innerHTML = list.length ? list.map((r) => `
+    <tr>
+      <td><b>${escapeHtml(r.productName || r.productId)}</b></td>
+      <td>${escapeHtml(r.name || "Guest")}</td>
+      <td>${"★".repeat(r.stars || 0)}${"☆".repeat(5 - (r.stars || 0))}</td>
+      <td style="max-width:320px">${escapeHtml((r.text || "").slice(0, 180))}${(r.text || "").length > 180 ? "…" : ""}</td>
+      <td><div class="hint">${new Date(r.at).toLocaleString("en-IN")}</div></td>
+      <td><button class="btn btn-danger btn-sm" onclick="removeReview('${r.id}')">Delete</button></td>
+    </tr>`).join("") : `<tr><td colspan="6">No reviews submitted yet.</td></tr>`;
+}
+function removeReview(id) {
+  if (!confirm("Delete this review? This cannot be undone.")) return;
+  MELVRA.deleteReview(id);
+  toast("Review deleted");
+  renderReviews();
+}
+
 function renderSettings() {
   const s = MELVRA.settings();
   $("#s-brand").value = s.brand;
@@ -572,6 +600,7 @@ window.addEventListener("DOMContentLoaded", () => {
     }
     if (type === "bills" && ui.page === "bills") renderBills();
     if (type === "announcements" && ui.page === "notes") go(ui.page);
+    if (type === "reviews" && ui.page === "reviews") renderReviews();
     if (type === "settings" && ui.page === "settings") go(ui.page);
   });
 });

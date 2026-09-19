@@ -35,6 +35,7 @@
         <button data-page="products" onclick="go('products')">Products</button>
         <button data-page="coupons" onclick="go('coupons')">Coupons</button>
         <button data-page="notes" onclick="go('notes')">Announcements</button>
+        <button data-page="reviews" onclick="go('reviews')">Reviews</button>
         <button data-page="orders" onclick="go('orders')">Orders</button>
         <button data-page="bills" onclick="go('bills')">Bills</button>
         <button data-page="settings" onclick="go('settings')">Settings</button>
@@ -179,6 +180,21 @@
             <label style="margin-top:12px"><input id="n-active" type="checkbox" checked style="width:auto;height:auto;margin-right:8px"> Show on the shop</label>
             <button class="btn btn-primary" type="submit" style="width:auto;margin-top:16px">Save note</button>
           </form>
+        </div>
+      </section>
+
+      <section class="page" id="page-reviews">
+        <div class="top">
+          <div>
+            <h2>Reviews</h2>
+            <p id="review-count">Real ratings and notes customers have submitted from the shop.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <table>
+            <thead><tr><th>Piece</th><th>Customer</th><th>Rating</th><th>Review</th><th>Date</th><th></th></tr></thead>
+            <tbody id="review-table"></tbody>
+          </table>
         </div>
       </section>
 
