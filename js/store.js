@@ -38,6 +38,26 @@
     fsdb.collection(collection).doc(String(id)).delete().catch((e) => console.error("Cloud delete failed:", collection, id, e));
   }
 
+  // Whether each collection has EVER been seeded, remembered permanently
+  // (not just for this page load). Firestore's local cache can report an
+  // empty snapshot for a split second before the real server data arrives —
+  // without this permanent flag, that momentary "empty" reading looked
+  // identical to "never seeded", so every reload risked re-planting the
+  // starter products/coupons/settings on top of (or alongside) whatever the
+  // admin had actually saved. Once a collection has been seen with real
+  // data even once, it is never auto-seeded again.
+  const SEED_KEY = "melvra.cloudSeeded";
+  function readSeeded() {
+    try { return JSON.parse(localStorage.getItem(SEED_KEY) || "{}"); } catch { return {}; }
+  }
+  function markSeeded(name) {
+    const s = readSeeded();
+    if (!s[name]) {
+      s[name] = true;
+      try { localStorage.setItem(SEED_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ }
+    }
+  }
+  function everSeeded(name) { return !!readSeeded()[name]; }
   const seeded = { products: false, coupons: false, settings: false, notes: false, categories: false };
 
   // Order timestamps can be an ISO string (new Date().toISOString()) — always
@@ -57,11 +77,13 @@
     // Products: one Firestore document per product (keeps big images from
     // ever hitting Firestore's 1MB-per-document limit on a single array doc).
     fsdb.collection("products").onSnapshot((snap) => {
-      if (snap.empty && !seeded.products) {
+      if (snap.empty && !seeded.products && !everSeeded("products")) {
         seeded.products = true;
+        markSeeded("products");
         DEFAULT_PRODUCTS.forEach((p) => cloudSetDoc("products", p.id, p));
         return;
       }
+      if (!snap.empty) markSeeded("products");
       // Always mirror the live Firestore state locally — including an empty
       // list — once seeding has happened once. Skipping the write when the
       // list is empty is what made deleted products "come back": the local
@@ -73,48 +95,56 @@
     }, (e) => console.error("Catalog sync error:", e));
 
     fsdb.doc("melvra/coupons").onSnapshot((doc) => {
-      if (!doc.exists && !seeded.coupons) {
+      if (!doc.exists && !seeded.coupons && !everSeeded("coupons")) {
         seeded.coupons = true;
+        markSeeded("coupons");
         cloudSet("melvra/coupons", { list: DEFAULT_COUPONS });
         return;
       }
       if (doc.exists) {
+        markSeeded("coupons");
         write(KEYS.coupons, doc.data().list || []);
         onChange && onChange("coupons");
       }
     }, (e) => console.error("Coupon sync error:", e));
 
     fsdb.doc("melvra/settings").onSnapshot((doc) => {
-      if (!doc.exists && !seeded.settings) {
+      if (!doc.exists && !seeded.settings && !everSeeded("settings")) {
         seeded.settings = true;
+        markSeeded("settings");
         cloudSet("melvra/settings", DEFAULT_SETTINGS);
         return;
       }
       if (doc.exists) {
+        markSeeded("settings");
         write(KEYS.settings, doc.data() || {});
         onChange && onChange("settings");
       }
     }, (e) => console.error("Settings sync error:", e));
 
     fsdb.doc("melvra/categories").onSnapshot((doc) => {
-      if (!doc.exists && !seeded.categories) {
+      if (!doc.exists && !seeded.categories && !everSeeded("categories")) {
         seeded.categories = true;
+        markSeeded("categories");
         cloudSet("melvra/categories", { list: deriveCategoryOrder() });
         return;
       }
       if (doc.exists) {
+        markSeeded("categories");
         write(KEYS.categories, doc.data().list || []);
         onChange && onChange("categories");
       }
     }, (e) => console.error("Category sync error:", e));
 
     fsdb.doc("melvra/announcements").onSnapshot((doc) => {
-      if (!doc.exists && !seeded.notes) {
+      if (!doc.exists && !seeded.notes && !everSeeded("notes")) {
         seeded.notes = true;
+        markSeeded("notes");
         cloudSet("melvra/announcements", { list: [] });
         return;
       }
       if (doc.exists) {
+        markSeeded("notes");
         write(KEYS.notes, doc.data().list || []);
         onChange && onChange("announcements");
       }
@@ -530,6 +560,25 @@
     localStorage.removeItem(KEYS.categories);
     // Bills are the permanent record — a reset intentionally does not
     // touch KEYS.bills.
+
+    if (fsdb) {
+      // With cloud sync on, the custom data lives in Firestore, not just
+      // this browser — clearing localStorage alone would just get
+      // overwritten by the next snapshot. Wipe the cloud copies too, clear
+      // the permanent "already seeded" flags, and reseed defaults fresh so
+      // the reset actually takes effect everywhere.
+      seeded.products = seeded.coupons = seeded.settings = seeded.notes = seeded.categories = false;
+      try { localStorage.removeItem(SEED_KEY); } catch (e) { /* ignore */ }
+      fsdb.collection("products").get().then((snap) => {
+        snap.docs.forEach((d) => d.ref.delete());
+      }).catch((e) => console.error("Reset: product wipe failed:", e));
+      cloudSet("melvra/coupons", { list: DEFAULT_COUPONS });
+      cloudSet("melvra/settings", DEFAULT_SETTINGS);
+      cloudSet("melvra/announcements", { list: [] });
+      markSeeded("coupons"); markSeeded("settings"); markSeeded("notes");
+      // Categories are re-derived once the fresh products land; no need to
+      // push them here.
+    }
   }
 
   global.MELVRA = {

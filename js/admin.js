@@ -44,11 +44,17 @@ function openStudio() {
 }
 
 const pageHistory = [];
-function go(page, skipHistory) {
+function go(page, skipHistory, opts) {
   if (!skipHistory && ui.page && ui.page !== page) pageHistory.push(ui.page);
   ui.page = page;
   ui.editId = null;
   ui.couponId = null;
+  // Also record this in real browser history, so the device/browser back
+  // button steps back through Studio pages instead of leaving the panel
+  // entirely (mirrors the same fix on the shop side).
+  if (!(opts && opts.fromPopState)) {
+    history.pushState({ melvraPage: page }, "", location.pathname + location.search);
+  }
   $$(".side nav button[data-page]").forEach((b) => b.classList.toggle("on", b.dataset.page === page));
   $$(".page").forEach((p) => p.classList.toggle("on", p.id === "page-" + page));
   if (page === "dash") renderDash();
@@ -575,6 +581,12 @@ function resetAll() {
   toast("Studio reset");
   go(ui.page);
 }
+
+history.replaceState({ melvraPage: "dash" }, "", location.pathname + location.search);
+window.addEventListener("popstate", (e) => {
+  const s = e.state || { melvraPage: "dash" };
+  go(s.melvraPage, true, { fromPopState: true });
+});
 
 window.addEventListener("DOMContentLoaded", () => {
   if (MELVRA.hasSession()) openStudio();

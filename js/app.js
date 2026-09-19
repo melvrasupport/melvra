@@ -31,7 +31,7 @@ const count = () => state.cart.reduce((a, i) => a + i.qty, 0);
 const findP = (id) => catalog().find((p) => p.id === id);
 const settings = () => MELVRA.settings();
 
-function setView(view, id) {
+function setView(view, id, opts) {
   state.view = view;
   state.productId = id || null;
   state.galleryIndex = 0;
@@ -39,6 +39,15 @@ function setView(view, id) {
   state.checkout = false;
   state.ordered = view === "ordered" ? true : false;
   reviewDraftStars = 0;
+  // Record this screen in real browser history so the device/browser back
+  // button steps back through the shop (home -> product -> cart, etc.)
+  // instead of leaving the site entirely. Skipped when we're the ones
+  // responding to a popstate event (opts.fromPopState), or the caller asked
+  // us not to push a new entry (opts.skipHistory) — otherwise every render
+  // would add a duplicate entry.
+  if (!(opts && (opts.fromPopState || opts.skipHistory))) {
+    history.pushState({ melvraView: view, melvraId: id || null }, "", location.pathname + location.search);
+  }
   $$(".view").forEach((v) => v.classList.remove("active"));
   if (view === "product") {
     $("#view-product").classList.add("active");
@@ -806,6 +815,15 @@ function applyBrandSettings() {
   if (copyBrandEl) copyBrandEl.textContent = "© " + new Date().getFullYear() + " " + brand;
   document.title = brand + " — " + tagline;
 }
+
+// Establish a baseline history entry for the home screen, then listen for
+// the browser's back/forward buttons and replay the matching in-app view
+// instead of letting the browser navigate away from the page.
+history.replaceState({ melvraView: "home", melvraId: null }, "", location.pathname + location.search);
+window.addEventListener("popstate", (e) => {
+  const s = e.state || { melvraView: "home", melvraId: null };
+  setView(s.melvraView, s.melvraId, { fromPopState: true });
+});
 
 window.addEventListener("DOMContentLoaded", () => {
   applyBrandSettings();
