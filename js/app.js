@@ -470,7 +470,7 @@ function renderCart() {
         <div class="eyebrow">Order confirmed</div>
         <h2>Thank you.</h2>
         <p style="color:var(--muted);max-width:420px;margin:10px auto 8px">Your pieces are being packed with care in Delhi. Order <b>${state.orderNo}</b>.</p>
-        <p style="color:var(--muted);margin-bottom:26px">${(() => { const o = MELVRA.orders().find((x) => x.id === state.orderNo); return o && o.paymentStatus === "Paid" ? "Payment received — a note will arrive on email shortly." : "A note will arrive on email shortly. Amount payable on delivery."; })()}</p>
+        <p style="color:var(--muted);margin-bottom:26px">Payment received — a note will arrive on email shortly.</p>
         <button class="btn btn-primary" onclick="state.ordered=false;setView('home')">Back to the atelier</button>
       </div>`;
     return;
@@ -497,10 +497,9 @@ function renderCart() {
             <select name="pay">
               <option>UPI</option>
               <option>Card</option>
-              <option>Cash on delivery</option>
             </select>
             <button class="btn btn-accent full" id="place-order-btn" style="margin-top:20px" type="submit">Pay ${inr(t.total)}</button>
-            <p class="hint" style="margin-top:8px;color:var(--muted);font-size:12px">Secured by Razorpay · UPI, Cards &amp; Netbanking accepted.</p>
+            <p class="hint" style="margin-top:8px;color:var(--muted);font-size:12px">Secured by Razorpay · UPI &amp; Cards accepted. Prepaid orders only — cash on delivery isn't available.</p>
           </form>
           <aside class="summary">
             <h3>On its way</h3>
@@ -567,13 +566,8 @@ function placeOrder(e) {
     status: "New"
   };
 
-  // Cash on delivery: no online payment to collect, place the order as before.
-  if (payMethod === "Cash on delivery") {
-    finalizeOrder(draft, { paymentStatus: "COD", paymentId: "" });
-    return;
-  }
-
-  // UPI / Card: collect real payment through Razorpay before the order exists.
+  // Every order is prepaid now — no Cash on delivery. UPI / Card both go
+  // through Razorpay; the order is only created once payment succeeds.
   startRazorpayPayment(draft, t.total, e.target);
 }
 

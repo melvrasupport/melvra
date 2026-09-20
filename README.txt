@@ -73,9 +73,10 @@ browser/security restrictions in those environments.
 
 REAL PAYMENTS (Razorpay setup)
 ================================================
-Checkout now takes a genuine payment for "UPI" and "Card" — a Razorpay
-popup opens for the customer, and the order is only created once the
-payment actually succeeds. "Cash on delivery" skips the popup, as before.
+The shop is prepaid-only — there is no Cash on delivery. Every order
+must be paid online (UPI or Card) through Razorpay before it's created;
+Checkout opens a Razorpay popup, and the order is only saved once the
+payment actually succeeds.
 
 To switch it on:
 1. Get a Razorpay account at https://razorpay.com and finish KYC (needed
