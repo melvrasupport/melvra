@@ -4,7 +4,47 @@ const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
 const CUSTOM_CAT = "__custom__";
 const escapeHtml = (s) => String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-const ui = { page: "dash", editId: null, couponId: null };
+// Safe way to pass a text value (e.g. a category like  Men's Wear ) into an
+// onclick="" attribute without breaking the page.
+const jsArg = (s) => escapeHtml(JSON.stringify(String(s == null ? "" : s)));
+const MAX_PHOTOS = 5;
+
+const ui = { page: "dash", editId: null, newId: null, couponId: null };
+
+// Tells the admin — visibly — whether their changes are really going online.
+function paintSyncStatus(errMsg) {
+  let el = $("#sync-status");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "sync-status";
+    el.style.cssText = "position:fixed;left:12px;bottom:12px;z-index:60;width:" + (window.innerWidth > 900 ? "216px" : "min(92vw,360px)") + ";padding:8px 11px;border-radius:10px;font-size:12px;line-height:1.4;box-shadow:0 4px 18px rgba(0,0,0,.14);border:1px solid transparent";
+    document.body.appendChild(el);
+  }
+  const info = MELVRA.syncInfo();
+  let bg = "#e9f6ee", fg = "#1f5e3a", bd = "#bfe3cd", msg = "● Live sync ON";
+  if (errMsg || info.lastError) {
+    bg = "#fdecea"; fg = "#8a1f17"; bd = "#f3b9b3";
+    msg = "⚠ Cloud problem: " + (errMsg || info.lastError);
+  } else if (!info.configured) {
+    bg = "#fff4dd"; fg = "#7a5200"; bd = "#f0d9a0";
+    msg = "⚠ Cloud sync is not set up — changes stay on THIS device only.";
+  } else if (!info.ready) {
+    bg = "#fdecea"; fg = "#8a1f17"; bd = "#f3b9b3";
+    msg = "⚠ Firebase did not load (blocked or offline). Changes will stay on THIS device only. Refresh with a working internet before adding products.";
+  }
+  el.style.background = bg; el.style.color = fg; el.style.borderColor = bd;
+  el.textContent = msg;
+}
+
+// Shows a clear alert if a cloud save did not go through.
+function reportFail(promise) {
+  Promise.resolve(promise).then((r) => {
+    if (r && r.ok === false) {
+      paintSyncStatus(r.message);
+      alert("⚠ This change was NOT saved online.\n\n" + r.message);
+    }
+  });
+}
 
 function toast(msg) {
   const t = $("#toast");
@@ -38,9 +78,20 @@ function logout() {
   showGate(true);
 }
 
+// Live sync (and the download of customer orders) starts ONLY after a
+// successful login — never for someone who merely opens admin.html.
+let syncStarted = false;
+function startAdminSync() {
+  if (syncStarted) return;
+  syncStarted = true;
+  paintSyncStatus();
+  MELVRA.startSync(refreshFromSync, { admin: true, onError: () => paintSyncStatus() });
+  setTimeout(() => paintSyncStatus(), 4000);
+}
 function openStudio() {
   showGate(false);
   go("dash");
+  startAdminSync();
 }
 
 const pageHistory = [];
@@ -80,7 +131,9 @@ function renderDash() {
   const products = MELVRA.catalog();
   const live = products.filter((p) => p.visible !== false);
   const orders = MELVRA.orders();
-  const revenue = orders.reduce((a, o) => a + (o.total || 0), 0);
+  // Revenue comes from Bills (permanent, never auto-removed) and skips
+  // cancelled orders — the old figure shrank whenever delivered orders aged out.
+  const revenue = MELVRA.bills().filter((o) => o.status !== "Cancelled").reduce((a, o) => a + (Number(o.total) || 0), 0);
   const low = products.filter((p) => (p.stock || 0) <= 8).length;
   const activeC = MELVRA.coupons().filter((c) => c.active).length;
   const reviewCount = MELVRA.reviews().length;
@@ -93,10 +146,10 @@ function renderDash() {
   const recent = orders.slice(0, 6);
   $("#dash-orders").innerHTML = recent.length ? recent.map((o) => `
     <tr>
-      <td>${o.id}</td>
-      <td>${o.name || "—"}</td>
+      <td>${escapeHtml(o.id)}</td>
+      <td>${escapeHtml(o.name) || "—"}</td>
       <td>${inr(o.total)}</td>
-      <td><span class="pill ${o.status === "New" ? "warn" : "on"}">${o.status}</span></td>
+      <td><span class="pill ${o.status === "New" ? "warn" : "on"}">${escapeHtml(o.status)}</span></td>
     </tr>`).join("") : `<tr><td colspan="4">No orders yet. They will appear here after checkout on the shop.</td></tr>`;
   $("#dash-coupons").textContent = activeC + " codes active";
 }
@@ -105,23 +158,28 @@ function renderDash() {
    PRODUCTS + CATEGORY (homepage-section) ORDERING
 --------------------------------------------------------------- */
 function renderProducts() {
+  renderProductTable();
+  $("#prod-editor").style.display = "none";
+}
+// Refreshes only the list + category order. Never touches the editor, so a
+// live update arriving while you type/upload can't wipe your form.
+function renderProductTable() {
   const list = MELVRA.catalog();
   $("#prod-count").textContent = list.length + " in catalog";
   $("#prod-table").innerHTML = list.length ? list.map((p) => `
     <tr>
-      <td><img class="thumb" src="${p.image}" alt=""></td>
-      <td><b>${p.name}</b><div class="hint">${p.id}</div></td>
-      <td>${p.category}</td>
+      <td><img class="thumb" src="${p.image || (p.gallery && p.gallery[0]) || ""}" alt=""></td>
+      <td><b>${escapeHtml(p.name)}</b><div class="hint">${escapeHtml(p.id)}</div></td>
+      <td>${escapeHtml(p.category)}</td>
       <td>${inr(p.price)}</td>
       <td>${p.stock ?? 0}</td>
       <td><span class="pill ${p.visible === false ? "off" : "on"}">${p.visible === false ? "Hidden" : "Live"}</span></td>
       <td class="actions">
-        <button class="btn btn-ghost btn-sm" onclick="editProduct('${p.id}')">Edit</button>
-        <button class="btn btn-ghost btn-sm" onclick="toggleVis('${p.id}')">${p.visible === false ? "Show" : "Hide"}</button>
-        <button class="btn btn-danger btn-sm" onclick="removeProduct('${p.id}')">Delete</button>
+        <button class="btn btn-ghost btn-sm" onclick="editProduct(${jsArg(p.id)})">Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleVis(${jsArg(p.id)})">${p.visible === false ? "Show" : "Hide"}</button>
+        <button class="btn btn-danger btn-sm" onclick="removeProduct(${jsArg(p.id)})">Delete</button>
       </td>
-    </tr>`).join("") : `<tr><td colspan="7">No pieces in the catalog right now.</td></tr>`;
-  $("#prod-editor").style.display = "none";
+    </tr>`).join("") : `<tr><td colspan="7">${MELVRA.catalogLoaded() ? "No pieces in the catalog right now." : "Loading catalog…"}</td></tr>`;
   renderCategoryOrder();
 }
 
@@ -131,29 +189,36 @@ function renderCategoryOrder() {
   const cats = MELVRA.categoryOrder();
   box.innerHTML = cats.length ? cats.map((c, i) => `
     <div class="cat-row">
-      <span class="cat-name">${c}</span>
+      <span class="cat-name">${escapeHtml(c)}</span>
       <div class="cat-actions">
-        <button class="btn btn-ghost btn-sm" title="Move up" ${i === 0 ? "disabled" : ""} onclick="bumpCategory('${c}', -1)">↑</button>
-        <button class="btn btn-ghost btn-sm" title="Move down" ${i === cats.length - 1 ? "disabled" : ""} onclick="bumpCategory('${c}', 1)">↓</button>
-        <button class="btn btn-danger btn-sm" title="Remove this homepage section (products keep this category, they just won't get their own section)" onclick="dropCategory('${c}')">Remove section</button>
+        <button class="btn btn-ghost btn-sm" title="Move up" ${i === 0 ? "disabled" : ""} onclick="bumpCategory(${i}, -1)">↑</button>
+        <button class="btn btn-ghost btn-sm" title="Move down" ${i === cats.length - 1 ? "disabled" : ""} onclick="bumpCategory(${i}, 1)">↓</button>
+        <button class="btn btn-danger btn-sm" title="Remove this homepage section (products keep this category, they just won't get their own section)" onclick="dropCategory(${i})">Remove section</button>
       </div>
     </div>`).join("") : `<p class="hint">Categories you use on products will appear here — the top one becomes the first section on the homepage.</p>`;
 }
-function bumpCategory(name, dir) {
-  MELVRA.moveCategory(name, dir);
+function bumpCategory(i, dir) {
+  const name = MELVRA.categoryOrder()[i];
+  if (name === undefined) return;
+  reportFail(MELVRA.moveCategory(name, dir));
   renderCategoryOrder();
 }
-function dropCategory(name) {
+function dropCategory(i) {
+  const name = MELVRA.categoryOrder()[i];
+  if (name === undefined) return;
   if (!confirm("Remove \"" + name + "\" as its own homepage section? Products keep this category and still show up under \"All\".")) return;
-  MELVRA.removeCategory(name);
+  reportFail(MELVRA.removeCategory(name));
   renderCategoryOrder();
 }
 
 function newProduct() {
   ui.editId = null;
+  // One id per "New piece" form: pressing Save twice (or a slow connection +
+  // second tap) now updates the SAME product instead of creating duplicates.
+  ui.newId = MELVRA.slug("piece");
   fillEditor({
-    name: "", category: "Bracelet", price: 599, compare: 699, stock: 10,
-    tag: "New", visible: true, image: "images/qmOsP.jpg", gallery: ["images/qmOsP.jpg"],
+    name: "", category: MELVRA.categoryOrder()[0] || "Bracelet", price: 599, compare: 699, stock: 10,
+    tag: "New", visible: true, image: "", gallery: [],
     desc: "", blurb: "", rating: 0, reviewCount: 0
   });
 }
@@ -161,6 +226,7 @@ function editProduct(id) {
   const p = MELVRA.findProduct(id);
   if (!p) return;
   ui.editId = id;
+  ui.newId = null;
   fillEditor(p);
 }
 function fillEditor(p) {
@@ -188,7 +254,7 @@ function fillCategorySelect(current) {
   const known = MELVRA.categoryOrder();
   const cats = [...known];
   if (current && !cats.includes(current)) cats.push(current);
-  sel.innerHTML = cats.map((c) => `<option value="${c}">${c}</option>`).join("")
+  sel.innerHTML = cats.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("")
     + `<option value="${CUSTOM_CAT}">+ Custom category…</option>`;
   sel.value = current && cats.includes(current) ? current : (cats[0] || CUSTOM_CAT);
   onCategoryChange();
@@ -223,38 +289,55 @@ function makeCoverImage(i) {
   ui.gallery.unshift(img);
   renderGalleryEditor();
 }
-function onGalleryFiles(input) {
+async function onGalleryFiles(input) {
   const files = [...(input.files || [])];
   if (!files.length) return;
   if (!ui.gallery) ui.gallery = [];
-  let remaining = files.length;
-  files.forEach((file) => {
-    resizeImageFile(file, 1080, 0.85).then((dataUrl) => {
-      ui.gallery.push(dataUrl);
-      remaining--;
-      if (remaining === 0) { renderGalleryEditor(); input.value = ""; }
-    });
-  });
+  const room = MAX_PHOTOS - ui.gallery.length;
+  if (room <= 0) { input.value = ""; return toast("Maximum " + MAX_PHOTOS + " photos per piece."); }
+  const use = files.slice(0, room);
+  if (files.length > room) toast("Only " + room + " more photo" + (room === 1 ? "" : "s") + " fit — extra ones skipped.");
+  else toast("Optimising photo" + (use.length === 1 ? "" : "s") + "…");
+  // Promise.all keeps the photos in the order they were picked.
+  const results = await Promise.all(use.map((f) => resizeImageFile(f).catch(() => null)));
+  let bad = 0;
+  results.forEach((r) => { if (r) ui.gallery.push(r); else bad++; });
+  if (bad) toast(bad + " photo" + (bad === 1 ? "" : "s") + " could not be read — please use JPG or PNG.");
+  input.value = "";
+  renderGalleryEditor();
 }
-function resizeImageFile(file, targetSize, quality) {
-  return new Promise((resolve) => {
+// Centre-crops to a square and compresses until each photo is ≈100 KB or
+// less. The old code saved 1080px photos of 300-450 KB each; a few of them
+// pushed the product over Firebase's 1 MB limit, so Firebase rejected it and
+// the product vanished a moment after it appeared.
+const PHOTO_MAX_CHARS = 110000;
+function resizeImageFile(file) {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read failed"));
     reader.onload = () => {
       const img = new Image();
+      img.onerror = () => reject(new Error("decode failed"));
       img.onload = () => {
-        // Every product photo on the site is shown at a 1:1 ratio, so we
-        // center-crop the source to a square before scaling it down —
-        // this keeps every image consistent regardless of the original
-        // photo's shape (portrait, landscape, etc).
         const side = Math.min(img.width, img.height);
+        if (!side) return reject(new Error("empty image"));
         const sx = (img.width - side) / 2;
         const sy = (img.height - side) / 2;
-        const canvas = document.createElement("canvas");
-        canvas.width = targetSize; canvas.height = targetSize;
-        canvas.getContext("2d").drawImage(img, sx, sy, side, side, 0, 0, targetSize, targetSize);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        let data = "";
+        for (const target of [800, 640, 512, 400]) {
+          const out = Math.min(target, side); // never upscale
+          const canvas = document.createElement("canvas");
+          canvas.width = out; canvas.height = out;
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, out, out); // transparent PNGs → white, not black
+          ctx.drawImage(img, sx, sy, side, side, 0, 0, out, out);
+          for (let q = 0.8; q >= 0.4; q -= 0.1) {
+            data = canvas.toDataURL("image/jpeg", q);
+            if (data.length <= PHOTO_MAX_CHARS) return resolve(data);
+          }
+        }
+        resolve(data);
       };
-      img.onerror = () => resolve(reader.result);
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
@@ -264,22 +347,27 @@ function cancelEditor() {
   $("#prod-editor").style.display = "none";
   ui.editId = null;
 }
-function saveProduct(e) {
+let savingProduct = false;
+async function saveProduct(e) {
   e.preventDefault();
+  if (savingProduct) return; // ignore double-taps while a save is in progress
   const name = $("#e-name").value.trim();
   if (!name) return toast("A name is required.");
   const category = currentCategoryValue();
   if (!category) return toast("Enter a category name.");
-  const existing = ui.editId ? MELVRA.findProduct(ui.editId) : {};
-  const gallery = (ui.gallery && ui.gallery.length) ? ui.gallery : (existing.gallery && existing.gallery.length ? existing.gallery : ["images/qmOsP.jpg"]);
+  const price = Number($("#e-price").value);
+  if (!(price >= 1)) return toast("Enter a price of at least ₹1.");
+  const existing = (ui.editId ? MELVRA.findProduct(ui.editId) : null) || {};
+  const gallery = (ui.gallery && ui.gallery.length) ? ui.gallery : (existing.gallery && existing.gallery.length ? existing.gallery : []);
+  if (!gallery.length) return toast("Add at least one photo.");
   const prod = {
     ...existing,
-    id: ui.editId || MELVRA.slug(name),
+    id: ui.editId || ui.newId || MELVRA.slug(name),
     name,
     category,
-    price: Number($("#e-price").value) || 0,
+    price,
     compare: Number($("#e-compare").value) || 0,
-    stock: Number($("#e-stock").value) || 0,
+    stock: Math.max(0, Math.floor(Number($("#e-stock").value) || 0)),
     tag: $("#e-tag").value.trim(),
     image: gallery[0],
     gallery: gallery,
@@ -290,40 +378,62 @@ function saveProduct(e) {
     reviewCount: existing.reviewCount || 0,
     specs: existing.specs || { Material: "Hand-spun cotton", Origin: "Made in Delhi" }
   };
-  MELVRA.upsertProduct(prod);
-  toast(prod.name + " saved");
+  const btn = e.target && e.target.querySelector ? e.target.querySelector('button[type="submit"]') : null;
+  savingProduct = true;
+  if (btn) { btn.disabled = true; btn.dataset.label = btn.textContent; btn.textContent = "Saving…"; }
+  const slow = setTimeout(() => toast("Still saving… check the internet and keep this page open."), 8000);
+  let res;
+  try { res = await MELVRA.upsertProduct(prod); }
+  catch (err) { res = { ok: false, message: (err && err.message) || "Unexpected error" }; }
+  clearTimeout(slow);
+  savingProduct = false;
+  if (btn) { btn.disabled = false; btn.textContent = btn.dataset.label || "Save"; }
+  if (!res.ok) {
+    paintSyncStatus(res.message);
+    renderProductTable();
+    // The form stays open with all your text and photos — nothing is lost.
+    alert("⚠ \"" + prod.name + "\" was NOT saved.\n\n" + res.message + "\n\nYour form is still open. Fix the problem and press Save again.");
+    return;
+  }
+  paintSyncStatus();
+  toast(prod.name + (MELVRA.isCloudReady() ? " saved — live on every device" : " saved on THIS device only (cloud not connected)"));
   ui.gallery = null;
+  ui.newId = null;
   renderProducts();
 }
-function toggleVis(id) {
+async function toggleVis(id) {
   const p = MELVRA.findProduct(id);
   if (!p) return;
-  MELVRA.upsertProduct({ ...p, visible: p.visible === false });
-  renderProducts();
+  const res = await MELVRA.upsertProduct({ ...p, visible: p.visible === false });
+  if (!res.ok) alert("⚠ Not saved online.\n\n" + res.message);
+  renderProductTable();
 }
 function removeProduct(id) {
   if (!confirm("Remove this piece from the catalog?")) return;
-  MELVRA.deleteProduct(id);
+  reportFail(MELVRA.deleteProduct(id));
   toast("Piece removed");
   renderProducts();
 }
 
 function renderCoupons() {
+  renderCouponTable();
+  $("#coup-editor").style.display = "none";
+}
+function renderCouponTable() {
   const list = MELVRA.coupons();
   $("#coup-table").innerHTML = list.map((c) => `
     <tr>
-      <td><b>${c.code}</b><div class="hint">${c.note || ""}</div></td>
+      <td><b>${escapeHtml(c.code)}</b><div class="hint">${escapeHtml(c.note)}</div></td>
       <td>${c.type === "percent" ? c.value + "%" : inr(c.value)}</td>
       <td>${inr(c.min || 0)}</td>
       <td>${c.used || 0} / ${c.maxUses || "∞"}</td>
       <td><span class="pill ${c.active ? "on" : "off"}">${c.active ? "Active" : "Paused"}</span></td>
       <td class="actions">
-        <button class="btn btn-ghost btn-sm" onclick="editCoupon('${c.id}')">Edit</button>
-        <button class="btn btn-ghost btn-sm" onclick="toggleCoupon('${c.id}')">${c.active ? "Pause" : "Activate"}</button>
-        <button class="btn btn-danger btn-sm" onclick="removeCoupon('${c.id}')">Delete</button>
+        <button class="btn btn-ghost btn-sm" onclick="editCoupon(${jsArg(c.id)})">Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleCoupon(${jsArg(c.id)})">${c.active ? "Pause" : "Activate"}</button>
+        <button class="btn btn-danger btn-sm" onclick="removeCoupon(${jsArg(c.id)})">Delete</button>
       </td>
     </tr>`).join("") || `<tr><td colspan="6">No coupons yet.</td></tr>`;
-  $("#coup-editor").style.display = "none";
 }
 function newCoupon() {
   ui.couponId = "c-" + Date.now();
@@ -356,7 +466,9 @@ function saveCoupon(e) {
   const code = $("#c-code").value.trim().toUpperCase().replace(/\s+/g, "");
   if (!code) return toast("Code is required.");
   const prev = MELVRA.coupons().find((x) => x.id === ui.couponId) || {};
-  MELVRA.upsertCoupon({
+  // Two different coupons must never share one code (the shop would pick the wrong one).
+  if (MELVRA.coupons().some((x) => x.code === code && x.id !== (ui.couponId || ""))) return toast("A coupon with this code already exists.");
+  reportFail(MELVRA.upsertCoupon({
     id: ui.couponId || "c-" + Date.now(),
     code,
     type: $("#c-type").value,
@@ -366,19 +478,19 @@ function saveCoupon(e) {
     used: prev.used || 0,
     note: $("#c-note").value.trim(),
     active: $("#c-active").checked
-  });
+  }));
   toast(code + " saved");
   renderCoupons();
 }
 function toggleCoupon(id) {
   const c = MELVRA.coupons().find((x) => x.id === id);
   if (!c) return;
-  MELVRA.upsertCoupon({ ...c, active: !c.active });
-  renderCoupons();
+  reportFail(MELVRA.upsertCoupon({ ...c, active: !c.active }));
+  renderCouponTable();
 }
 function removeCoupon(id) {
   if (!confirm("Delete this coupon?")) return;
-  MELVRA.deleteCoupon(id);
+  reportFail(MELVRA.deleteCoupon(id));
   renderCoupons();
 }
 function cancelCoupon() { $("#coup-editor").style.display = "none"; }
@@ -402,40 +514,48 @@ function orderDetailsBlock(o) {
   const mapsHref = o.address ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(o.address) : "";
   return `
     <div style="background:var(--panel-2,#f6f1e8);border-radius:10px;padding:14px 16px;display:grid;gap:6px;font-size:14px">
-      <div><b>Name:</b> ${o.name || "—"}</div>
-      <div><b>Email:</b> ${o.email ? `<a href="${gmailHref}" target="_blank" rel="noopener" style="text-decoration:underline">${o.email}</a>` : "—"}</div>
-      <div><b>Phone:</b> ${o.phone ? `<a href="tel:${o.phone}" style="text-decoration:underline">${o.phone}</a>` : "—"}</div>
-      <div><b>Address:</b> ${o.address || "—"} ${mapsHref ? `<a href="${mapsHref}" target="_blank" rel="noopener" style="text-decoration:underline;margin-left:6px">Open in Google Maps ↗</a>` : ""}</div>
-      <div><b>Payment method:</b> ${o.pay || "—"} ${o.paymentStatus ? `<span class="pill ${o.paymentStatus === "Paid" ? "on" : o.paymentStatus === "COD" ? "warn" : "off"}" style="margin-left:6px">${o.paymentStatus}</span>` : ""}</div>
-      ${o.paymentId ? `<div><b>Payment ID:</b> ${o.paymentId}</div>` : ""}
-      <div><b>Account:</b> ${o.user || "Guest checkout"}</div>
-      <div><b>Coupon used:</b> ${o.coupon || "—"}</div>
-      <div><b>Items:</b> ${(o.items || []).map((i) => i.name + " × " + i.qty + " (" + inr(i.price) + ")").join(", ") || "—"}</div>
+      <div><b>Name:</b> ${escapeHtml(o.name) || "—"}</div>
+      <div><b>Email:</b> ${o.email ? `<a href="${escapeHtml(gmailHref)}" target="_blank" rel="noopener" style="text-decoration:underline">${escapeHtml(o.email)}</a>` : "—"}</div>
+      <div><b>Phone:</b> ${o.phone ? `<a href="tel:${escapeHtml(o.phone)}" style="text-decoration:underline">${escapeHtml(o.phone)}</a>` : "—"}</div>
+      <div><b>Address:</b> ${escapeHtml(o.address) || "—"} ${mapsHref ? `<a href="${escapeHtml(mapsHref)}" target="_blank" rel="noopener" style="text-decoration:underline;margin-left:6px">Open in Google Maps ↗</a>` : ""}</div>
+      <div><b>Payment method:</b> ${escapeHtml(o.pay) || "—"} ${o.paymentStatus ? `<span class="pill ${o.paymentStatus === "Paid" ? "on" : o.paymentStatus === "COD" ? "warn" : "off"}" style="margin-left:6px">${escapeHtml(o.paymentStatus)}</span>` : ""}</div>
+      ${o.paymentId ? `<div><b>Payment ID:</b> ${escapeHtml(o.paymentId)}</div>` : ""}
+      <div><b>Account:</b> ${escapeHtml(o.user) || "Guest checkout"}</div>
+      <div><b>Coupon used:</b> ${escapeHtml(o.coupon) || "—"}</div>
+      <div><b>Items:</b> ${(o.items || []).map((i) => escapeHtml(i.name || i.id) + " × " + escapeHtml(i.qty) + " (" + inr(i.price) + ")").join(", ") || "—"}</div>
       <div><b>Subtotal:</b> ${inr(o.sub)} &nbsp; <b>Discount:</b> ${o.discount ? "−" + inr(o.discount) : "—"} &nbsp; <b>Shipping:</b> ${o.ship ? inr(o.ship) : "Free"}</div>
     </div>`;
 }
 
+function openDetailIds(prefix) {
+  return $$('[id^="' + prefix + '"]').filter((r) => r.style.display !== "none").map((r) => r.id);
+}
+function restoreDetailIds(ids) {
+  ids.forEach((id) => { const r = document.getElementById(id); if (r) r.style.display = "table-row"; });
+}
 function renderOrders() {
   MELVRA.purgeExpiredDeliveries();
+  const openIds = openDetailIds("ord-details-");
   const list = MELVRA.orders(); // already sorted newest-first
   $("#ord-table").innerHTML = list.length ? list.map((o) => `
     <tr>
-      <td><b>${o.id}</b><div class="hint">${new Date(o.at).toLocaleString("en-IN")}</div></td>
-      <td>${o.name}<div class="hint">${o.email || ""}</div></td>
-      <td>${(o.items || []).map((i) => i.name + " × " + i.qty).join(", ")}</td>
-      <td>${o.coupon ? o.coupon : "—"}</td>
+      <td><b>${escapeHtml(o.id)}</b><div class="hint">${new Date(o.at).toLocaleString("en-IN")}</div></td>
+      <td>${escapeHtml(o.name)}<div class="hint">${escapeHtml(o.email)}</div></td>
+      <td>${(o.items || []).map((i) => escapeHtml(i.name || i.id) + " × " + escapeHtml(i.qty)).join(", ")}</td>
+      <td>${o.coupon ? escapeHtml(o.coupon) : "—"}</td>
       <td>${inr(o.total)}<div class="hint"><span class="pill ${o.paymentStatus === "Paid" ? "on" : o.paymentStatus === "COD" ? "warn" : "off"}">${o.paymentStatus || "—"}</span></div></td>
       <td>
-        <select onchange="setStatus('${o.id}', this.value)">
+        <select onchange="setStatus(${jsArg(o.id)}, this.value)">
           ${["New", "Packed", "Shipped", "Delivered", "Cancelled"].map((s) => `<option ${o.status === s ? "selected" : ""}>${s}</option>`).join("")}
         </select>
         ${daysLeftBadge(o)}
       </td>
-      <td><button class="btn btn-ghost btn-sm" onclick="toggleOrderDetails('${o.id}')">Details</button></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="toggleOrderDetails(${jsArg(o.id)})">Details</button></td>
     </tr>
-    <tr id="ord-details-${o.id}" style="display:none">
+    <tr id="ord-details-${escapeHtml(o.id)}" style="display:none">
       <td colspan="7">${orderDetailsBlock(o)}</td>
     </tr>`).join("") : `<tr><td colspan="7">No orders yet.</td></tr>`;
+  restoreDetailIds(openIds);
 }
 function toggleOrderDetails(id) {
   const row = $("#ord-details-" + id);
@@ -443,27 +563,29 @@ function toggleOrderDetails(id) {
   row.style.display = row.style.display === "none" ? "table-row" : "none";
 }
 function setStatus(id, status) {
-  MELVRA.updateOrder(id, { status });
+  reportFail(MELVRA.updateOrder(id, { status }));
   toast("Order " + id + " → " + status);
   renderOrders();
 }
 
 function renderBills() {
+  const openIds = openDetailIds("bill-details-");
   const list = MELVRA.bills(); // permanent, never auto-removed
   $("#bill-count").textContent = list.length + " recorded";
   $("#bill-table").innerHTML = list.length ? list.map((o) => `
     <tr>
-      <td><b>${o.id}</b><div class="hint">${new Date(o.at).toLocaleString("en-IN")}</div></td>
-      <td>${o.name}<div class="hint">${o.email || ""}</div></td>
-      <td>${(o.items || []).map((i) => i.name + " × " + i.qty).join(", ")}</td>
-      <td>${o.coupon ? o.coupon : "—"}</td>
+      <td><b>${escapeHtml(o.id)}</b><div class="hint">${new Date(o.at).toLocaleString("en-IN")}</div></td>
+      <td>${escapeHtml(o.name)}<div class="hint">${escapeHtml(o.email)}</div></td>
+      <td>${(o.items || []).map((i) => escapeHtml(i.name || i.id) + " × " + escapeHtml(i.qty)).join(", ")}</td>
+      <td>${o.coupon ? escapeHtml(o.coupon) : "—"}</td>
       <td>${inr(o.total)}</td>
-      <td><span class="pill ${o.status === "Delivered" ? "on" : o.status === "Cancelled" ? "off" : "warn"}">${o.status || "—"}</span></td>
-      <td><button class="btn btn-ghost btn-sm" onclick="toggleBillDetails('${o.id}')">Details</button></td>
+      <td><span class="pill ${o.status === "Delivered" ? "on" : o.status === "Cancelled" ? "off" : "warn"}">${escapeHtml(o.status) || "—"}</span></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="toggleBillDetails(${jsArg(o.id)})">Details</button></td>
     </tr>
-    <tr id="bill-details-${o.id}" style="display:none">
+    <tr id="bill-details-${escapeHtml(o.id)}" style="display:none">
       <td colspan="7">${orderDetailsBlock(o)}</td>
     </tr>`).join("") : `<tr><td colspan="7">No bills recorded yet.</td></tr>`;
+  restoreDetailIds(openIds);
 }
 function toggleBillDetails(id) {
   const row = $("#bill-details-" + id);
@@ -472,17 +594,20 @@ function toggleBillDetails(id) {
 }
 
 function renderNotes() {
+  renderNoteTable();
+  $("#note-editor").style.display = "none";
+}
+function renderNoteTable() {
   const list = MELVRA.announcements();
   $("#note-table").innerHTML = list.length ? list.map((a) => `
     <tr>
-      <td>${a.text}</td>
+      <td>${escapeHtml(a.text)}</td>
       <td><span class="pill ${a.active ? "on" : "off"}">${a.active ? "Live" : "Off"}</span></td>
       <td class="actions">
-        <button class="btn btn-ghost btn-sm" onclick="toggleNote('${a.id}')">${a.active ? "Hide" : "Show"}</button>
-        <button class="btn btn-danger btn-sm" onclick="removeNote('${a.id}')">Delete</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleNote(${jsArg(a.id)})">${a.active ? "Hide" : "Show"}</button>
+        <button class="btn btn-danger btn-sm" onclick="removeNote(${jsArg(a.id)})">Delete</button>
       </td>
     </tr>`).join("") : `<tr><td colspan="3">No announcements yet.</td></tr>`;
-  $("#note-editor").style.display = "none";
 }
 function newNote() {
   $("#n-text").value = "";
@@ -496,7 +621,7 @@ function saveNote(e) {
   const active = $("#n-active").checked;
   const list = MELVRA.announcements().map((a) => active ? { ...a, active: false } : a);
   MELVRA.saveAnnouncements(list);
-  MELVRA.upsertAnnouncement({ id: "n-" + Date.now(), text, active, at: new Date().toISOString() });
+  reportFail(MELVRA.upsertAnnouncement({ id: "n-" + Date.now(), text, active, at: new Date().toISOString() }));
   toast("Announcement saved");
   renderNotes();
 }
@@ -505,12 +630,16 @@ function toggleNote(id) {
   const target = list.find((a) => a.id === id);
   if (!target) return;
   const next = !target.active;
-  MELVRA.saveAnnouncements(list.map((a) => ({ ...a, active: next && a.id === id })));
-  renderNotes();
+  const updated = list.map((a) => ({ ...a, active: next && a.id === id }));
+  MELVRA.saveAnnouncements(updated);
+  // This toggle used to change only this device; now it is pushed to everyone.
+  reportFail(MELVRA.upsertAnnouncement(updated.find((a) => a.id === id)));
+  updated.filter((a) => a.id !== id && list.find((x) => x.id === a.id).active).forEach((a) => MELVRA.upsertAnnouncement(a));
+  renderNoteTable();
 }
 function removeNote(id) {
-  MELVRA.deleteAnnouncement(id);
-  renderNotes();
+  reportFail(MELVRA.deleteAnnouncement(id));
+  renderNoteTable();
 }
 
 /* ---------------------------------------------------------------
@@ -527,12 +656,12 @@ function renderReviews() {
       <td>${"★".repeat(r.stars || 0)}${"☆".repeat(5 - (r.stars || 0))}</td>
       <td style="max-width:320px">${escapeHtml((r.text || "").slice(0, 180))}${(r.text || "").length > 180 ? "…" : ""}</td>
       <td><div class="hint">${new Date(r.at).toLocaleString("en-IN")}</div></td>
-      <td><button class="btn btn-danger btn-sm" onclick="removeReview('${r.id}')">Delete</button></td>
+      <td><button class="btn btn-danger btn-sm" onclick="removeReview(${jsArg(r.id)})">Delete</button></td>
     </tr>`).join("") : `<tr><td colspan="6">No reviews submitted yet.</td></tr>`;
 }
 function removeReview(id) {
   if (!confirm("Delete this review? This cannot be undone.")) return;
-  MELVRA.deleteReview(id);
+  reportFail(MELVRA.deleteReview(id));
   toast("Review deleted");
   renderReviews();
 }
@@ -547,14 +676,14 @@ function renderSettings() {
   const products = MELVRA.catalog();
   const sel = $("#s-spotlight");
   if (sel) {
-    sel.innerHTML = products.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
+    sel.innerHTML = products.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join("");
     sel.value = s.spotlightProductId || (products[0] && products[0].id) || "";
   }
   $("#s-spotlight-label").value = s.spotlightLabel || "";
 }
 function saveSettings(e) {
   e.preventDefault();
-  MELVRA.saveSettings({
+  reportFail(MELVRA.saveSettings({
     brand: $("#s-brand").value.trim() || "MELVRA",
     tagline: $("#s-tag").value.trim(),
     freeShip: Number($("#s-free").value) || 0,
@@ -562,7 +691,7 @@ function saveSettings(e) {
     email: $("#s-email").value.trim(),
     spotlightProductId: $("#s-spotlight") ? $("#s-spotlight").value : "",
     spotlightLabel: $("#s-spotlight-label") ? $("#s-spotlight-label").value.trim() : ""
-  });
+  }));
   toast("Settings saved");
 }
 async function savePass(e) {
@@ -576,9 +705,12 @@ async function savePass(e) {
   $("#s-pass2").value = "";
   toast("Password updated");
 }
-function resetAll() {
-  if (!confirm("Reset catalog, coupons and orders to the original atelier set? (Bills history is kept.)")) return;
-  MELVRA.resetDemo();
+async function resetAll() {
+  if (!confirm("This DELETES every product, coupon and setting on the live shop and puts back the original demo set. (Bills history is kept.)\n\nContinue?")) return;
+  const typed = prompt("Type RESET (capital letters) to confirm. This cannot be undone.");
+  if (typed !== "RESET") return toast("Reset cancelled.");
+  const res = await MELVRA.resetDemo();
+  if (res && res.ok === false) return alert("⚠ Reset did not finish online.\n\n" + res.message);
   toast("Studio reset");
   go(ui.page);
 }
@@ -588,6 +720,39 @@ window.addEventListener("popstate", (e) => {
   const s = e.state || { melvraPage: "dash" };
   go(s.melvraPage, true, { fromPopState: true });
 });
+
+function isTypingNow() {
+  const a = document.activeElement;
+  return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+}
+function refreshFromSync(type) {
+  if (!MELVRA.hasSession()) return;
+  const dash = ui.page === "dash";
+  if (type === "catalog") {
+    if (ui.page === "products") renderProductTable();
+    else if (dash) renderDash();
+    else if (ui.page === "settings" && !isTypingNow()) renderSettings();
+  }
+  if (type === "categories" && ui.page === "products") renderCategoryOrder();
+  if (type === "coupons") {
+    if (ui.page === "coupons") renderCouponTable();
+    else if (dash) renderDash();
+  }
+  if (type === "orders") {
+    if (ui.page === "orders") renderOrders();
+    else if (dash) renderDash();
+  }
+  if (type === "bills") {
+    if (ui.page === "bills") renderBills();
+    else if (dash) renderDash();
+  }
+  if (type === "announcements" && ui.page === "notes") renderNoteTable();
+  if (type === "reviews") {
+    if (ui.page === "reviews") renderReviews();
+    else if (dash) renderDash();
+  }
+  if (type === "settings" && ui.page === "settings" && !isTypingNow()) renderSettings();
+}
 
 window.addEventListener("DOMContentLoaded", () => {
   if (MELVRA.hasSession()) openStudio();
@@ -601,19 +766,9 @@ window.addEventListener("DOMContentLoaded", () => {
     if (MELVRA.purgeExpiredDeliveries() && ui.page === "orders") renderOrders();
   }, 60 * 60 * 1000);
 
-  // Live updates: reflect changes made from another device/tab logged
-  // into the same studio (e.g. teammate editing stock at the same time).
-  MELVRA.startSync((type) => {
-    if (type === "catalog" && (ui.page === "products" || ui.page === "dash")) go(ui.page);
-    if (type === "categories" && ui.page === "products") renderCategoryOrder();
-    if (type === "coupons" && (ui.page === "coupons" || ui.page === "dash")) go(ui.page);
-    if (type === "orders") {
-      MELVRA.purgeExpiredDeliveries();
-      if (ui.page === "orders" || ui.page === "dash") go(ui.page);
-    }
-    if (type === "bills" && ui.page === "bills") renderBills();
-    if (type === "announcements" && ui.page === "notes") go(ui.page);
-    if (type === "reviews" && ui.page === "reviews") renderReviews();
-    if (type === "settings" && ui.page === "settings") go(ui.page);
-  });
+  // (Live sync itself is started by startAdminSync(), after login. It only
+  // re-draws lists — it never closes an open editor, never resets what you
+  // are typing, and never pushes browser history. The old version called go()
+  // here, which closed the product form and could turn "Edit" into a
+  // duplicate "New" product mid-edit.)
 });

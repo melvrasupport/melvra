@@ -2,14 +2,23 @@
 // Reset whenever a product page is (re)rendered for a different piece.
 let reviewDraftStars = 0;
 
+// A damaged/blocked browser-storage value must never blank the whole shop.
+function loadList(key) {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(v) ? v : [];
+  } catch (e) { return []; }
+}
+
 const state = {
   view: "home",
   filter: "All",
   productId: null,
   galleryIndex: 0,
   qty: 1,
-  cart: JSON.parse(localStorage.getItem("melvra-cart") || "[]"),
-  wishes: JSON.parse(localStorage.getItem("melvra-wish") || "[]"),
+  cart: loadList("melvra-cart"),
+  wishes: loadList("melvra-wish"),
+  paying: false,
   checkout: false,
   ordered: false,
   orderNo: null,
@@ -22,9 +31,14 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
 const escapeHtml = (s) => String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const save = () => {
-  localStorage.setItem("melvra-cart", JSON.stringify(state.cart));
-  localStorage.setItem("melvra-wish", JSON.stringify(state.wishes));
+  try {
+    localStorage.setItem("melvra-cart", JSON.stringify(state.cart));
+    localStorage.setItem("melvra-wish", JSON.stringify(state.wishes));
+  } catch (e) { /* storage full/blocked: the bag still works for this visit */ }
 };
+// Escape text that came from the Studio (names, categories) before it goes
+// into HTML, and make it safe to place inside an onclick="" attribute.
+const jsArg = (s) => escapeHtml(JSON.stringify(String(s == null ? "" : s)));
 const catalog = () => MELVRA.catalog();
 const PRODUCTS = () => MELVRA.liveProducts();
 const count = () => state.cart.reduce((a, i) => a + i.qty, 0);
@@ -129,7 +143,7 @@ function updateBadge() {
 function toast(id) {
   const p = findP(id);
   const t = $("#toast");
-  t.innerHTML = `<img src="${p.image}" alt=""><div><b>Added to bag</b><small>${p.name} · ${inr(p.price)}</small></div>`;
+  t.innerHTML = `<img src="${p.image}" alt=""><div><b>Added to bag</b><small>${escapeHtml(p.name)} · ${inr(p.price)}</small></div>`;
   t.classList.add("show");
   clearTimeout(toast._t);
   toast._t = setTimeout(() => t.classList.remove("show"), 2600);
@@ -151,13 +165,13 @@ function productCard(p) {
   return `
     <article class="card reveal" onclick="setView('product','${p.id}')">
       <div class="card-media">
-        <img src="${p.image}" alt="${p.name}">
-        <span class="card-tag">${out ? "Sold out" : p.tag || p.category}</span>
+        <img src="${p.image}" alt="${escapeHtml(p.name)}">
+        <span class="card-tag">${out ? "Sold out" : escapeHtml(p.tag || p.category)}</span>
         <button class="wish ${on ? "on" : ""}" onclick="toggleWish('${p.id}', event)" aria-label="Save">${on ? "♥" : "♡"}</button>
       </div>
       <div class="card-body">
-        <div class="card-cat">${p.category}</div>
-        <h3>${p.name}</h3>
+        <div class="card-cat">${escapeHtml(p.category)}</div>
+        <h3>${escapeHtml(p.name)}</h3>
         <div class="card-row">
           <div>
             <div class="price">${inr(p.price)}</div>
@@ -188,7 +202,7 @@ function renderFilterChips() {
   if (!wrap) return;
   const cats = MELVRA.categoryOrder();
   wrap.innerHTML = `<button class="chip ${state.filter === "All" ? "active" : ""}" data-f="All" onclick="setFilter('All')">All</button>`
-    + cats.map((c) => `<button class="chip ${state.filter === c ? "active" : ""}" data-f="${c}" onclick="setFilter('${c}')">${c}</button>`).join("");
+    + cats.map((c) => `<button class="chip ${state.filter === c ? "active" : ""}" data-f="${escapeHtml(c)}" onclick="setFilter(${jsArg(c)})">${escapeHtml(c)}</button>`).join("");
 }
 
 // One homepage section per category, newest-created category first (that
@@ -209,13 +223,13 @@ function renderCategorySections() {
       <section class="section cat-section">
         <div class="section-inner">
           <div class="section-head">
-            <h2>${cat}</h2>
+            <h2>${escapeHtml(cat)}</h2>
             <p>${items.length} piece${items.length === 1 ? "" : "s"} in this shelf.</p>
           </div>
           <div class="grid">${shown.map(productCard).join("")}</div>
           ${items.length > SECTION_CAP ? `
             <div style="text-align:center;margin-top:28px">
-              <button class="btn btn-ghost" onclick="setFilter('${cat}');document.getElementById('shop').scrollIntoView({behavior:'smooth'})">See more ${cat.toLowerCase()}</button>
+              <button class="btn btn-ghost" onclick="setFilter(${jsArg(cat)});document.getElementById('shop').scrollIntoView({behavior:'smooth'})">See more ${escapeHtml(cat.toLowerCase())}</button>
             </div>` : ""}
         </div>
       </section>`;
@@ -290,17 +304,17 @@ function renderProduct() {
 
   $("#view-product").innerHTML = `
     <div class="pdp">
-      <div class="crumb"><a href="#" onclick="setView('home');return false;">Shop</a> · ${p.category} · ${p.name}</div>
+      <div class="crumb"><a href="#" onclick="setView('home');return false;">Shop</a> · ${escapeHtml(p.category)} · ${escapeHtml(p.name)}</div>
       <div class="pdp-grid">
         <div>
-          <div class="gallery-main"><img src="${img}" alt="${p.name}"></div>
+          <div class="gallery-main"><img src="${img}" alt="${escapeHtml(p.name)}"></div>
           <div class="thumbs">
             ${gallery.map((g, i) => `<button class="${i === state.galleryIndex ? "on" : ""}" onclick="state.galleryIndex=${i};renderProduct()"><img src="${g}" alt=""></button>`).join("")}
           </div>
         </div>
         <div class="pdp-info">
-          <div class="eyebrow">${p.tag || p.category} · Handmade</div>
-          <h1>${p.name}</h1>
+          <div class="eyebrow">${escapeHtml(p.tag || p.category)} · Handmade</div>
+          <h1>${escapeHtml(p.name)}</h1>
           <div class="stars">${starsHtml} <span>${rt.count ? rt.avg.toFixed(1) + " · " + rt.count + " review" + (rt.count === 1 ? "" : "s") : "No reviews yet"}</span></div>
           <div class="pdp-price"><span class="now">${inr(p.price)}</span>${p.compare ? `<span class="was">${inr(p.compare)}</span>` : ""}</div>
           <p class="desc">${p.desc || p.blurb || ""}</p>
@@ -390,12 +404,46 @@ function submitReview(e, productId) {
   renderProduct();
 }
 
+// Drops bag items whose piece was deleted / hidden / sold out and trims
+// quantities to the real stock. Returns true if the bag changed. Skipped
+// until the live catalog has actually loaded, so a slow connection can
+// never empty someone's bag.
+function pruneCart() {
+  if (!MELVRA.catalogLoaded()) return false;
+  let changed = false;
+  const next = [];
+  state.cart.forEach((i) => {
+    const p = findP(i.id);
+    const stock = p ? Math.max(0, Number(p.stock) || 0) : 0;
+    if (!p || p.visible === false || stock < 1) { changed = true; return; }
+    const want = Math.max(1, Math.floor(Number(i.qty) || 1));
+    const q = Math.min(want, stock);
+    if (q !== i.qty) changed = true;
+    next.push({ id: i.id, qty: q });
+  });
+  if (changed) { state.cart = next; save(); updateBadge(); }
+  return changed;
+}
+
 function totals() {
   const s = settings();
   const sub = state.cart.reduce((a, i) => {
     const p = findP(i.id);
     return a + (p ? p.price * i.qty : 0);
   }, 0);
+  // A coupon's discount used to be frozen at the moment it was applied, so
+  // lowering the bag afterwards kept the full discount (and bypassed the
+  // minimum order). It is now re-checked against the current bag every time.
+  if (state.couponCode) {
+    const chk = MELVRA.applyCoupon(state.couponCode, sub);
+    if (chk.ok) state.coupon = chk;
+    else {
+      const why = chk.reason;
+      state.coupon = null;
+      state.couponCode = "";
+      try { toastMsg("Coupon removed — " + why); } catch (e) { /* ignore */ }
+    }
+  }
   const afterCoupon = Math.max(0, sub - (state.coupon?.discount || 0));
   const ship = afterCoupon === 0 || afterCoupon >= s.freeShip ? 0 : s.shipFee;
   return { sub, discount: state.coupon?.discount || 0, ship, total: afterCoupon + ship };
@@ -429,10 +477,10 @@ function cartRows() {
     if (!p) return "";
     return `
       <div class="cart-item">
-        <img src="${p.image}" alt="${p.name}" onclick="setView('product','${p.id}')">
+        <img src="${p.image}" alt="${escapeHtml(p.name)}" onclick="setView('product','${p.id}')">
         <div>
-          <h4>${p.name}</h4>
-          <div class="meta">${p.category} · ${inr(p.price)}</div>
+          <h4>${escapeHtml(p.name)}</h4>
+          <div class="meta">${escapeHtml(p.category)} · ${inr(p.price)}</div>
           <div class="qty" style="height:36px">
             <button onclick="setQty('${p.id}', ${i.qty - 1})">−</button>
             <span>${i.qty}</span>
@@ -452,7 +500,7 @@ function couponBox() {
     <div class="coupon-box">
       <label>Coupon</label>
       <div class="coupon-row">
-        <input id="coupon-input" value="${state.couponCode}" placeholder="WELCOME10" ${state.coupon ? "disabled" : ""}>
+        <input id="coupon-input" value="${escapeHtml(state.couponCode)}" placeholder="WELCOME10" ${state.coupon ? "disabled" : ""}>
         ${state.coupon
           ? `<button class="btn btn-ghost" type="button" onclick="clearCoupon()">Remove</button>`
           : `<button class="btn btn-ghost" type="button" onclick="tryCoupon()">Apply</button>`}
@@ -460,7 +508,31 @@ function couponBox() {
     </div>`;
 }
 
+function checkoutSummaryInner(t) {
+  return `
+            <h3>On its way</h3>
+            ${state.cart.map((i) => { const p = findP(i.id); return p ? `<div class="row"><span>${escapeHtml(p.name)} × ${i.qty}</span><span>${inr(p.price * i.qty)}</span></div>` : ""; }).join("")}
+            ${t.discount ? `<div class="row"><span>Coupon ${escapeHtml(state.couponCode)}</span><span>−${inr(t.discount)}</span></div>` : ""}
+            <div class="row"><span>Shipping</span><span>${t.ship ? inr(t.ship) : "Free"}</span></div>
+            <div class="row total"><span>Total</span><span>${inr(t.total)}</span></div>`;
+}
+// Live updates (someone else buys → stock changes) used to re-draw the whole
+// checkout, which ERASED the name/address the customer was typing. Now only
+// the price summary and the Pay button are refreshed.
+function refreshCheckoutSummary() {
+  if (!state.cart.length) { renderCart(); return; }
+  const box = $("#checkout-summary");
+  if (!box) return;
+  const t = totals();
+  box.innerHTML = checkoutSummaryInner(t);
+  const btn = $("#place-order-btn");
+  if (btn && !btn.disabled) btn.textContent = "Pay " + inr(t.total);
+}
+
 function renderCart() {
+  if (!state.ordered && pruneCart()) {
+    try { toastMsg("Your bag was updated — some pieces are no longer available."); } catch (e) { /* ignore */ }
+  }
   const t = totals();
   const s = settings();
   if (state.ordered) {
@@ -501,13 +573,7 @@ function renderCart() {
             <button class="btn btn-accent full" id="place-order-btn" style="margin-top:20px" type="submit">Pay ${inr(t.total)}</button>
             <p class="hint" style="margin-top:8px;color:var(--muted);font-size:12px">Secured by Razorpay · UPI &amp; Cards accepted. Prepaid orders only — cash on delivery isn't available.</p>
           </form>
-          <aside class="summary">
-            <h3>On its way</h3>
-            ${state.cart.map((i) => { const p = findP(i.id); return p ? `<div class="row"><span>${p.name} × ${i.qty}</span><span>${inr(p.price * i.qty)}</span></div>` : ""; }).join("")}
-            ${t.discount ? `<div class="row"><span>Coupon ${state.couponCode}</span><span>−${inr(t.discount)}</span></div>` : ""}
-            <div class="row"><span>Shipping</span><span>${t.ship ? inr(t.ship) : "Free"}</span></div>
-            <div class="row total"><span>Total</span><span>${inr(t.total)}</span></div>
-          </aside>
+          <aside class="summary" id="checkout-summary">${checkoutSummaryInner(t)}</aside>
         </div>
       </div>`;
     return;
@@ -539,17 +605,33 @@ function renderCart() {
 
 function placeOrder(e) {
   e.preventDefault();
+  if (state.paying) return; // a payment window is already open
+  if (!MELVRA.catalogLoaded()) return toastMsg("Still loading the shop — please try again in a moment.");
+  // Re-check the bag against the LIVE catalog right before taking money.
+  if (pruneCart()) {
+    toastMsg("Your bag changed — some pieces sold out or were removed. Please review it.");
+    renderCart();
+    return;
+  }
+  if (!state.cart.length) return;
   const fd = new FormData(e.target);
   const t = totals();
+  if (!(t.total >= 1)) return toastMsg("Order total looks wrong — please review your bag.");
+  const phone = String(fd.get("phone") || "").trim();
+  if (phone.replace(/\D/g, "").length < 10) return toastMsg("Please enter a valid phone number (10 digits).");
+  const pin = String(fd.get("pin") || "").trim();
+  if (!/^\d{6}$/.test(pin)) return toastMsg("Please enter a valid 6-digit PIN code.");
   const payMethod = fd.get("pay");
-  const orderNo = "MEL-" + Math.floor(24000 + Math.random() * 70000);
+  // Unique by construction (time + random). The old 5-digit random number
+  // could repeat, and a repeat silently OVERWROTE an earlier paid order.
+  const orderNo = "MEL-" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 4).toUpperCase();
   const items = state.cart.map((i) => {
     const p = findP(i.id);
     const it = { id: i.id, qty: i.qty };
     if (p) {
       if (p.name != null) it.name = p.name;
       if (p.price != null) it.price = p.price;
-      if (p.image != null) it.image = p.image;
+      if (p.image != null && String(p.image).length < 2000) it.image = p.image; // never copy a big base64 photo into every order
     }
     return it;
   });
@@ -557,11 +639,11 @@ function placeOrder(e) {
   const draft = {
     id: orderNo,
     at: new Date().toISOString(),
-    name: (fd.get("first") || "") + " " + (fd.get("last") || ""),
-    email: fd.get("email"),
+    name: (String(fd.get("first") || "").trim() + " " + String(fd.get("last") || "").trim()).trim(),
+    email: String(fd.get("email") || "").trim(),
     user: who?.username || "",
-    phone: fd.get("phone"),
-    address: [fd.get("address"), fd.get("city"), fd.get("pin")].filter(Boolean).join(", "),
+    phone,
+    address: [fd.get("address"), fd.get("city"), pin].map((x) => String(x || "").trim()).filter(Boolean).join(", "),
     pay: payMethod,
     items,
     sub: t.sub,
@@ -595,6 +677,7 @@ function startRazorpayPayment(draft, totalAmount, formEl) {
   }
 
   if (btn) { btn.disabled = true; btn.textContent = "Opening payment window…"; }
+  state.paying = true;
 
   const rzp = new Razorpay({
     key: cfg.keyId,
@@ -611,37 +694,72 @@ function startRazorpayPayment(draft, totalAmount, formEl) {
     theme: { color: cfg.themeColor || "#2d2a26" },
     handler: function (response) {
       // Payment succeeded — response.razorpay_payment_id is Razorpay's proof.
-      finalizeOrder(draft, {
-        paymentStatus: "Paid",
-        paymentId: response.razorpay_payment_id || ""
-      });
+      const payId = (response && response.razorpay_payment_id) || "";
+      try {
+        finalizeOrder(draft, { paymentStatus: "Paid", paymentId: payId });
+      } catch (err) {
+        console.error("finalizeOrder crashed after payment:", err);
+        state.paying = false;
+        alert("Your payment was received (Payment ID: " + payId + ") but the confirmation screen hit a problem.\nDon't pay again — your order " + draft.id + " has been saved and will appear shortly. If it doesn't, message us this Payment ID.");
+      }
     },
     modal: {
       ondismiss: function () {
         // Customer closed the popup without paying — restore the button,
         // no order is created, cart stays exactly as it was.
-        if (btn) { btn.disabled = false; btn.textContent = "Pay " + inr(totalAmount); }
+        state.paying = false;
+        const b = $("#place-order-btn") || btn;
+        if (b) { b.disabled = false; b.textContent = "Pay " + inr(totalAmount); }
       }
     }
   });
 
   rzp.on("payment.failed", function (response) {
-    if (btn) { btn.disabled = false; btn.textContent = "Pay " + inr(totalAmount); }
+    state.paying = false;
+    const b = $("#place-order-btn") || btn;
+    if (b) { b.disabled = false; b.textContent = "Pay " + inr(totalAmount); }
     alert("Payment failed: " + (response?.error?.description || "please try again.") + "\nNo money was deducted for this attempt; your bag is unchanged.");
   });
 
   rzp.open();
 }
 
-// Actually creates the order — called once a payment is confirmed (or
-// immediately for Cash on delivery). This is the only place stock is
-// adjusted and the cart is cleared, so a cancelled/failed payment never
-// touches inventory.
+// Actually creates the order — called once a payment is confirmed.
+// The money is already taken at this point, so the ORDER RECORD comes first.
+// (Before, stock and coupon were updated first; if either step threw — e.g.
+// because browser storage was full — the order was never written even though
+// Razorpay had charged the customer.) Every step below is independent: one
+// failing can never stop the others.
 function finalizeOrder(draft, paymentInfo) {
+  state.paying = false;
   const order = { ...draft, paymentStatus: paymentInfo.paymentStatus, paymentId: paymentInfo.paymentId || "" };
-  order.items.forEach((it) => MELVRA.adjustStock(it.id, -it.qty));
-  if (state.couponCode) MELVRA.markCouponUsed(state.couponCode);
-  MELVRA.addOrder(order);
+
+  // 1) A safety copy on this device first: if the browser closes or the
+  //    network drops right now, the order is re-sent on the next visit.
+  try { MELVRA.queueOrder(order); } catch (e) { console.error(e); }
+
+  // 2) The order + permanent bill.
+  let saved;
+  try { saved = MELVRA.addOrder(order); }
+  catch (e) { console.error("addOrder failed:", e); saved = Promise.resolve({ ok: false, message: String(e && e.message || e) }); }
+
+  // 3) Stock and coupon usage (each guarded on its own).
+  order.items.forEach((it) => {
+    try { MELVRA.adjustStock(it.id, -it.qty); } catch (e) { console.error("stock update failed:", e); }
+  });
+  if (order.coupon) {
+    try { MELVRA.markCouponUsed(order.coupon); } catch (e) { console.error("coupon update failed:", e); }
+  }
+
+  Promise.resolve(saved).then((r) => {
+    if (r && r.ok) { try { MELVRA.dequeueOrder(order.id); } catch (e) { /* ignore */ } }
+    else {
+      console.error("Order could not be confirmed online yet:", r);
+      // It stays queued on this device and is retried automatically.
+    }
+  });
+
+  // 4) Show the confirmation screen.
   state.orderNo = order.id;
   state.cart = [];
   state.coupon = null;
@@ -663,7 +781,7 @@ function renderDrawer() {
         return `<div class="cart-item" style="grid-template-columns:72px 1fr;margin-bottom:10px">
           <img src="${p.image}" alt="" style="width:72px;height:64px">
           <div>
-            <h4 style="font-size:20px">${p.name}</h4>
+            <h4 style="font-size:20px">${escapeHtml(p.name)}</h4>
             <div class="meta">${i.qty} × ${inr(p.price)}</div>
             <button class="remove" onclick="removeItem('${p.id}')">Remove</button>
           </div>
@@ -846,13 +964,16 @@ function renderAccount() {
     setView("login");
     return;
   }
-  const mine = MELVRA.orders().filter((o) => o.email === u.username || o.user === u.username || o.name === u.name);
+  // Only this customer's own orders (the old filter also matched anyone with
+  // the same name, and needed every customer's orders to be downloaded).
+  MELVRA.watchMyOrders(u.username, () => { if (state.view === "account") renderAccount(); });
+  const mine = MELVRA.myOrders().filter((o) => !o.user || o.user === u.username);
   $("#view-account").innerHTML = `
     <div class="account-page">
       <div class="eyebrow">House account</div>
       <div class="section-head">
-        <h2>${u.name}</h2>
-        <p>@${u.username} · customer</p>
+        <h2>${escapeHtml(u.name)}</h2>
+        <p>@${escapeHtml(u.username)} · customer</p>
       </div>
       <div class="qty-row" style="margin-bottom:28px">
         <button class="btn btn-ghost" onclick="setView('home')">Continue shopping</button>
@@ -862,8 +983,8 @@ function renderAccount() {
       ${mine.length ? `<div class="cart-list">${mine.map((o) => `
         <div class="cart-item" style="grid-template-columns:1fr auto">
           <div>
-            <h4>${o.id}</h4>
-            <div class="meta">${new Date(o.at).toLocaleDateString("en-IN")} · ${o.status || "New"}</div>
+            <h4>${escapeHtml(o.id)}</h4>
+            <div class="meta">${new Date(o.at).toLocaleDateString("en-IN")} · ${escapeHtml(o.status || "New")}</div>
           </div>
           <b>${inr(o.total)}</b>
         </div>`).join("")}</div>` : `<p style="color:var(--muted)">No orders yet.</p>`}
@@ -914,27 +1035,45 @@ window.addEventListener("DOMContentLoaded", () => {
   renderAnnounce();
   setTimeout(() => $("#loader")?.classList.add("hide"), 900);
 
+  // Orders that were paid but not yet confirmed as saved (browser closed,
+  // network dropped…) are re-sent now.
+  try { MELVRA.flushPendingOrders(); } catch (e) { console.error(e); }
+
   // Live updates: when admin changes something in the studio, every open
-  // shop tab reflects it automatically — no refresh needed.
+  // shop tab reflects it automatically — no refresh needed. Screens where
+  // the visitor may be typing (checkout form, review box, coupon box) are
+  // never re-drawn from under them.
+  const busyTyping = () => {
+    const a = document.activeElement;
+    return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest("#view-cart, #view-product, #view-auth"));
+  };
+  const reviewDraftOpen = () => {
+    const r = $("#review-text");
+    return !!(r && r.value.trim());
+  };
   MELVRA.startSync((type) => {
-    if (type === "catalog") {
-      if (state.view === "home") { renderGrid(); renderCategorySections(); }
-      if (state.view === "product") renderProduct();
-      if (state.view === "cart") renderCart();
+    if (type === "catalog" || type === "settings") {
+      if (type === "catalog" && pruneCart()) toastMsg("Your bag was updated — some pieces changed or sold out.");
+      if (type === "catalog") {
+        if (state.view === "home") { renderGrid(); renderCategorySections(); }
+        if (state.view === "product" && !busyTyping() && !reviewDraftOpen()) renderProduct();
+        updateBadge();
+      }
+      if (state.view === "cart" && !state.ordered) {
+        if (state.checkout) refreshCheckoutSummary();
+        else if (!busyTyping()) renderCart();
+      }
+      renderDrawer();
       renderSpotlight();
+      if (type === "settings") applyBrandSettings();
     }
     if (type === "categories") {
       if (state.view === "home") { renderFilterChips(); renderCategorySections(); }
     }
-    if (type === "settings") {
-      if (state.view === "cart" || state.view === "checkout") renderCart();
-      renderSpotlight();
-      applyBrandSettings();
-    }
     if (type === "announcements") renderAnnounce();
     if (type === "reviews") {
       if (state.view === "home") renderHomeReviews();
-      if (state.view === "product") renderProduct();
+      if (state.view === "product" && !busyTyping() && !reviewDraftOpen()) renderProduct();
     }
   });
 });
