@@ -21,17 +21,32 @@
     console.warn("MELVRA cloud sync not started:", e);
   }
 
+  // Firestore rejects any field whose value is `undefined`. Strip them so a
+  // missing product name/price/image never silently kills the whole write.
+  function sanitize(obj) {
+    if (obj === null || obj === undefined) return obj;
+    if (Array.isArray(obj)) return obj.map(sanitize).filter((v) => v !== undefined);
+    if (typeof obj === "object") {
+      const out = {};
+      for (const k in obj) {
+        const v = sanitize(obj[k]);
+        if (v !== undefined) out[k] = v;
+      }
+      return out;
+    }
+    return obj;
+  }
   function cloudSet(path, data) {
     if (!fsdb) return;
-    fsdb.doc(path).set(data).catch((e) => console.error("Cloud save failed:", path, e));
+    fsdb.doc(path).set(sanitize(data)).catch((e) => console.error("Cloud save failed:", path, e));
   }
   function cloudSetDoc(collection, id, data) {
     if (!fsdb) return;
-    fsdb.collection(collection).doc(String(id)).set(data).catch((e) => console.error("Cloud save failed:", collection, id, e));
+    fsdb.collection(collection).doc(String(id)).set(sanitize(data)).catch((e) => console.error("Cloud save failed:", collection, id, e));
   }
   function cloudMergeDoc(collection, id, data) {
     if (!fsdb) return;
-    fsdb.collection(collection).doc(String(id)).set(data, { merge: true }).catch((e) => console.error("Cloud update failed:", collection, id, e));
+    fsdb.collection(collection).doc(String(id)).set(sanitize(data), { merge: true }).catch((e) => console.error("Cloud update failed:", collection, id, e));
   }
   function cloudDeleteDoc(collection, id) {
     if (!fsdb) return;
@@ -79,17 +94,29 @@
     fsdb.collection("products").onSnapshot((snap) => {
       if (snap.empty && !seeded.products && !everSeeded("products")) {
         seeded.products = true;
-        markSeeded("products");
-        DEFAULT_PRODUCTS.forEach((p) => cloudSetDoc("products", p.id, p));
+        // Only mark "seeded" once the defaults actually land. Marking it
+        // before the write (the old bug) meant a failed write left the
+        // catalog permanently empty on every reload.
+        Promise.all(DEFAULT_PRODUCTS.map((p) =>
+          fsdb.collection("products").doc(String(p.id)).set(sanitize(p))
+        )).then(() => {
+          markSeeded("products");
+        }).catch((e) => {
+          console.error("Seed products failed:", e);
+          seeded.products = false;
+        });
         return;
       }
       if (!snap.empty) markSeeded("products");
-      // Always mirror the live Firestore state locally — including an empty
-      // list — once seeding has happened once. Skipping the write when the
-      // list is empty is what made deleted products "come back": the local
-      // copy kept the old data and catalog() treated an empty save as "no
-      // save yet" and re-served the defaults.
       const list = snap.docs.map((d) => d.data());
+      // Never let an empty cloud snapshot wipe a locally-filled catalog
+      // while seed is still in flight (or the first write hasn't arrived).
+      if (!list.length) {
+        const local = read(KEYS.catalog, null);
+        if (Array.isArray(local) && local.length > 0 && !everSeeded("products")) {
+          return;
+        }
+      }
       write(KEYS.catalog, list);
       onChange && onChange("catalog");
     }, (e) => console.error("Catalog sync error:", e));
@@ -367,16 +394,17 @@
     return read(KEYS.orders, []).slice().sort((a, b) => orderTime(b) - orderTime(a));
   }
   function addOrder(order) {
+    const safe = sanitize(order) || {};
     const list = orders();
-    list.unshift(order);
+    list.unshift(safe);
     write(KEYS.orders, list);
-    cloudSetDoc("orders", order.id, order);
+    cloudSetDoc("orders", safe.id, safe);
     // Also record it permanently in Bills — this copy is never removed by
     // the delivered-order cleanup below.
     const billList = bills();
-    billList.unshift(order);
+    billList.unshift(safe);
     write(KEYS.bills, billList);
-    cloudSetDoc("bills", order.id, order);
+    cloudSetDoc("bills", safe.id, safe);
   }
   function updateOrder(id, patch) {
     const next = { ...patch };

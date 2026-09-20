@@ -1,0 +1,33 @@
+MELVRA — what was fixed (20 Sep 2026)
+=====================================
+
+1. Payments succeeded but orders never showed in Studio
+   Cause: Firestore rejects any field with value `undefined`.
+   If a cart item had a missing name/price/image, the whole order write
+   was silently dropped. Money still went through Razorpay.
+   Fix: every cloud write is now sanitized; order items only include
+   fields that actually exist.
+
+2. All products disappeared from the shop
+   Cause: on first Firebase connect, the empty products collection
+   was treated as "already seeded" BEFORE the starter products were
+   written. A failed write then left the catalog empty forever, and
+   that empty list overwrote the local catalog.
+   Fix: "seeded" is only marked after the writes succeed. An empty
+   cloud snapshot no longer wipes a local catalog that still has pieces.
+
+WHAT YOU SHOULD DO
+------------------
+1. Upload this whole folder (replace the old site files).
+2. Keep js/firebase-config.js and js/razorpay-config.js as they are
+   (your keys are already filled in).
+3. Open admin.html → Studio → Products → add your pieces again.
+4. Place a test order. It should appear under Studio → Orders and Bills
+   with a green "Paid" tag, and the Razorpay payment ID.
+
+If products still look empty after upload: in the browser console run
+  localStorage.removeItem("melvra.cloudSeeded")
+then refresh once. Starter pieces will re-plant if Firestore is empty.
+
+Firebase rules must allow read/write (test mode is fine for launch):
+  allow read, write: if true;

@@ -545,7 +545,13 @@ function placeOrder(e) {
   const orderNo = "MEL-" + Math.floor(24000 + Math.random() * 70000);
   const items = state.cart.map((i) => {
     const p = findP(i.id);
-    return { id: i.id, name: p?.name, qty: i.qty, price: p?.price, image: p?.image };
+    const it = { id: i.id, qty: i.qty };
+    if (p) {
+      if (p.name != null) it.name = p.name;
+      if (p.price != null) it.price = p.price;
+      if (p.image != null) it.image = p.image;
+    }
+    return it;
   });
   const who = currentUser();
   const draft = {
