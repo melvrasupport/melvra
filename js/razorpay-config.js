@@ -11,7 +11,7 @@
    shop owner to add the key, instead of silently failing.
 */
 window.MELVRA_RAZORPAY_CONFIG = {
-  keyId: "PASTE_YOUR_RAZORPAY_KEY_ID_HERE",
+  keyId: "rzp_live_TdrrVsrjZZUL5v",
   // Shown as the payment popup's business name / logo.
   businessName: "MELVRA",
   themeColor: "#2d2a26"
