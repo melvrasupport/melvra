@@ -71,6 +71,34 @@ index.html directly as a local file, or viewing it inside Claude's
 artifact preview, will not load the Firebase scripts because of
 browser/security restrictions in those environments.
 
+REAL PAYMENTS (Razorpay setup)
+================================================
+Checkout now takes a genuine payment for "UPI" and "Card" — a Razorpay
+popup opens for the customer, and the order is only created once the
+payment actually succeeds. "Cash on delivery" skips the popup, as before.
+
+To switch it on:
+1. Get a Razorpay account at https://razorpay.com and finish KYC (needed
+   before "Live" keys work; "Test" keys work immediately for trying it out).
+2. Dashboard → Settings → API Keys → Generate Key. Copy the "Key ID"
+   (starts with rzp_live_... or rzp_test_...). Do NOT use the "Key Secret"
+   anywhere in this website's files — keep that private to your Razorpay
+   account only.
+3. Open js/razorpay-config.js and paste the Key ID in place of
+   PASTE_YOUR_RAZORPAY_KEY_ID_HERE. Save the file.
+4. Re-upload/deploy the site.
+
+The moment a customer pays, the order is written straight to Firestore
+with paymentStatus "Paid" and the Razorpay payment ID — because the
+Studio's Orders/Bills tabs already sync live from Firestore, the new
+order (with a green "Paid" tag) appears on every device instantly,
+with no refresh needed.
+
+Note: this checks that Razorpay itself reported success in the
+customer's browser. For a fully tamper-proof setup (server verifies
+Razorpay's signature before marking an order Paid), you'd add a small
+Firebase Cloud Function — ask Claude if you'd like that added later.
+
 WHAT'S NEW (this update)
 =========================
 - Orders now always sort newest-first, in the Studio and on the

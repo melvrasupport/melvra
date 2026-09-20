@@ -470,7 +470,7 @@ function renderCart() {
         <div class="eyebrow">Order confirmed</div>
         <h2>Thank you.</h2>
         <p style="color:var(--muted);max-width:420px;margin:10px auto 8px">Your pieces are being packed with care in Delhi. Order <b>${state.orderNo}</b>.</p>
-        <p style="color:var(--muted);margin-bottom:26px">A note will arrive on email shortly. This is a demonstration checkout — no payment was taken.</p>
+        <p style="color:var(--muted);margin-bottom:26px">${(() => { const o = MELVRA.orders().find((x) => x.id === state.orderNo); return o && o.paymentStatus === "Paid" ? "Payment received — a note will arrive on email shortly." : "A note will arrive on email shortly. Amount payable on delivery."; })()}</p>
         <button class="btn btn-primary" onclick="state.ordered=false;setView('home')">Back to the atelier</button>
       </div>`;
     return;
@@ -499,7 +499,8 @@ function renderCart() {
               <option>Card</option>
               <option>Cash on delivery</option>
             </select>
-            <button class="btn btn-accent full" style="margin-top:20px" type="submit">Place order · ${inr(t.total)}</button>
+            <button class="btn btn-accent full" id="place-order-btn" style="margin-top:20px" type="submit">Pay ${inr(t.total)}</button>
+            <p class="hint" style="margin-top:8px;color:var(--muted);font-size:12px">Secured by Razorpay · UPI, Cards &amp; Netbanking accepted.</p>
           </form>
           <aside class="summary">
             <h3>On its way</h3>
@@ -541,23 +542,22 @@ function placeOrder(e) {
   e.preventDefault();
   const fd = new FormData(e.target);
   const t = totals();
-  state.orderNo = "MEL-" + Math.floor(24000 + Math.random() * 70000);
+  const payMethod = fd.get("pay");
+  const orderNo = "MEL-" + Math.floor(24000 + Math.random() * 70000);
   const items = state.cart.map((i) => {
     const p = findP(i.id);
     return { id: i.id, name: p?.name, qty: i.qty, price: p?.price, image: p?.image };
   });
-  items.forEach((it) => MELVRA.adjustStock(it.id, -it.qty));
-  if (state.couponCode) MELVRA.markCouponUsed(state.couponCode);
   const who = currentUser();
-  MELVRA.addOrder({
-    id: state.orderNo,
+  const draft = {
+    id: orderNo,
     at: new Date().toISOString(),
     name: (fd.get("first") || "") + " " + (fd.get("last") || ""),
     email: fd.get("email"),
     user: who?.username || "",
     phone: fd.get("phone"),
     address: [fd.get("address"), fd.get("city"), fd.get("pin")].filter(Boolean).join(", "),
-    pay: fd.get("pay"),
+    pay: payMethod,
     items,
     sub: t.sub,
     discount: t.discount,
@@ -565,7 +565,84 @@ function placeOrder(e) {
     ship: t.ship,
     total: t.total,
     status: "New"
+  };
+
+  // Cash on delivery: no online payment to collect, place the order as before.
+  if (payMethod === "Cash on delivery") {
+    finalizeOrder(draft, { paymentStatus: "COD", paymentId: "" });
+    return;
+  }
+
+  // UPI / Card: collect real payment through Razorpay before the order exists.
+  startRazorpayPayment(draft, t.total, e.target);
+}
+
+// Opens the Razorpay Checkout popup for `draft`'s total. Only on a genuine
+// successful payment does the order get created (via finalizeOrder) — if the
+// customer closes the popup or the payment fails, nothing is saved and they
+// stay on the checkout form so they can retry.
+function startRazorpayPayment(draft, totalAmount, formEl) {
+  const cfg = window.MELVRA_RAZORPAY_CONFIG || {};
+  const btn = formEl ? formEl.querySelector("#place-order-btn") : $("#place-order-btn");
+
+  if (!cfg.keyId || cfg.keyId.indexOf("PASTE_") === 0) {
+    alert("Payments aren't set up yet — the shop owner needs to add a Razorpay Key ID in js/razorpay-config.js.");
+    return;
+  }
+  if (typeof Razorpay === "undefined") {
+    alert("Couldn't reach the payment gateway. Please check your internet connection and try again.");
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = "Opening payment window…"; }
+
+  const rzp = new Razorpay({
+    key: cfg.keyId,
+    amount: Math.round(totalAmount * 100), // paise
+    currency: "INR",
+    name: cfg.businessName || "MELVRA",
+    description: "Order " + draft.id,
+    prefill: {
+      name: draft.name,
+      email: draft.email,
+      contact: draft.phone
+    },
+    notes: { order_id: draft.id },
+    theme: { color: cfg.themeColor || "#2d2a26" },
+    handler: function (response) {
+      // Payment succeeded — response.razorpay_payment_id is Razorpay's proof.
+      finalizeOrder(draft, {
+        paymentStatus: "Paid",
+        paymentId: response.razorpay_payment_id || ""
+      });
+    },
+    modal: {
+      ondismiss: function () {
+        // Customer closed the popup without paying — restore the button,
+        // no order is created, cart stays exactly as it was.
+        if (btn) { btn.disabled = false; btn.textContent = "Pay " + inr(totalAmount); }
+      }
+    }
   });
+
+  rzp.on("payment.failed", function (response) {
+    if (btn) { btn.disabled = false; btn.textContent = "Pay " + inr(totalAmount); }
+    alert("Payment failed: " + (response?.error?.description || "please try again.") + "\nNo money was deducted for this attempt; your bag is unchanged.");
+  });
+
+  rzp.open();
+}
+
+// Actually creates the order — called once a payment is confirmed (or
+// immediately for Cash on delivery). This is the only place stock is
+// adjusted and the cart is cleared, so a cancelled/failed payment never
+// touches inventory.
+function finalizeOrder(draft, paymentInfo) {
+  const order = { ...draft, paymentStatus: paymentInfo.paymentStatus, paymentId: paymentInfo.paymentId || "" };
+  order.items.forEach((it) => MELVRA.adjustStock(it.id, -it.qty));
+  if (state.couponCode) MELVRA.markCouponUsed(state.couponCode);
+  MELVRA.addOrder(order);
+  state.orderNo = order.id;
   state.cart = [];
   state.coupon = null;
   state.couponCode = "";

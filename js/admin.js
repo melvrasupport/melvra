@@ -406,7 +406,8 @@ function orderDetailsBlock(o) {
       <div><b>Email:</b> ${o.email ? `<a href="${gmailHref}" target="_blank" rel="noopener" style="text-decoration:underline">${o.email}</a>` : "—"}</div>
       <div><b>Phone:</b> ${o.phone ? `<a href="tel:${o.phone}" style="text-decoration:underline">${o.phone}</a>` : "—"}</div>
       <div><b>Address:</b> ${o.address || "—"} ${mapsHref ? `<a href="${mapsHref}" target="_blank" rel="noopener" style="text-decoration:underline;margin-left:6px">Open in Google Maps ↗</a>` : ""}</div>
-      <div><b>Payment method:</b> ${o.pay || "—"}</div>
+      <div><b>Payment method:</b> ${o.pay || "—"} ${o.paymentStatus ? `<span class="pill ${o.paymentStatus === "Paid" ? "on" : o.paymentStatus === "COD" ? "warn" : "off"}" style="margin-left:6px">${o.paymentStatus}</span>` : ""}</div>
+      ${o.paymentId ? `<div><b>Payment ID:</b> ${o.paymentId}</div>` : ""}
       <div><b>Account:</b> ${o.user || "Guest checkout"}</div>
       <div><b>Coupon used:</b> ${o.coupon || "—"}</div>
       <div><b>Items:</b> ${(o.items || []).map((i) => i.name + " × " + i.qty + " (" + inr(i.price) + ")").join(", ") || "—"}</div>
@@ -423,7 +424,7 @@ function renderOrders() {
       <td>${o.name}<div class="hint">${o.email || ""}</div></td>
       <td>${(o.items || []).map((i) => i.name + " × " + i.qty).join(", ")}</td>
       <td>${o.coupon ? o.coupon : "—"}</td>
-      <td>${inr(o.total)}</td>
+      <td>${inr(o.total)}<div class="hint"><span class="pill ${o.paymentStatus === "Paid" ? "on" : o.paymentStatus === "COD" ? "warn" : "off"}">${o.paymentStatus || "—"}</span></div></td>
       <td>
         <select onchange="setStatus('${o.id}', this.value)">
           ${["New", "Packed", "Shipped", "Delivered", "Cancelled"].map((s) => `<option ${o.status === s ? "selected" : ""}>${s}</option>`).join("")}
